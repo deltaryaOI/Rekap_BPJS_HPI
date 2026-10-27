@@ -19,6 +19,14 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Master Rekap & Generator Surat BPJS", layout="wide")
 st.title("📄 Master Rekap & Generator Dokumen BPJS")
 
+def safe_int(val):
+    try:
+        if pd.isna(val) or val is None or str(val).strip() == "" or str(val).strip().lower() == "none":
+            return 0
+        return int(float(val))
+    except (ValueError, TypeError):
+        return 0
+
 # ==============================================================================
 # DATABASE KONTRAK & SIDEBAR SURAT WORD
 # ==============================================================================
@@ -291,7 +299,7 @@ with tab1:
                     ws.cell(row=r_idx, column=3, value=str(row["NPP"])).alignment = Alignment(horizontal="center")
                     ws.cell(row=r_idx, column=4, value=str(row["Nomor Kontrak"])).alignment = Alignment(horizontal="left")
                     ws.cell(row=r_idx, column=5, value=str(row["Kode Iuran"])).alignment = Alignment(horizontal="center")
-                    ws.cell(row=r_idx, column=6, value=int(row["Jumlah Tenaga Kerja"])).alignment = Alignment(horizontal="center")
+                    ws.cell(row=r_idx, column=6, value=safe_int(row["Jumlah Tenaga Kerja"])).alignment = Alignment(horizontal="center")
                     
                     for c_off, col_name in enumerate(["Total Iuran JKK", "Total Iuran JHT", "Total Iuran JKM", "Total Iuran JPN", "Total Pembayaran"], start=7):
                         c_cell = ws.cell(row=r_idx, column=c_off, value=float(row[col_name]))
@@ -391,7 +399,7 @@ with tab1:
                         row_cells[0].text = str(row_data["NO"])
                         row_cells[1].text = str(row_data["NPP"])
                         row_cells[2].text = str(row_data["Nomor Kontrak"])
-                        row_cells[3].text = str(int(row_data["Jumlah Tenaga Kerja"]))
+                        row_cells[3].text = str(safe_int(row_data["Jumlah Tenaga Kerja"]))
                         row_cells[4].text = formatted_iuran
 
                         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
