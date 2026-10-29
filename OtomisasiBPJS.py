@@ -102,7 +102,7 @@ st.sidebar.header("📌 Pengaturan Dokumen Word")
 wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["CAB. PALEMBANG", "CAB. MEDAN", "CAB. SIBOLGA NIAS", "CAB. BABEL"]
 selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
 
-wilayah_display = selected_wilayah.replace("CAB. ", "").replace("CAB ", "").strip()
+wilayah_display = re.sub(r'(?i)\bcab\.?\s*', '', selected_wilayah).strip()
 
 kontrak_options = db_kontrak.get(selected_wilayah, [])
 if not kontrak_options:
