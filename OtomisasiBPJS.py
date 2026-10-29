@@ -19,6 +19,9 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Master Rekap & Generator Surat BPJS", layout="wide")
 st.title("📄 Master Rekap & Generator Dokumen BPJS")
 
+# ==============================================================================
+# FUNGSI KEAMANAN & HELPER
+# ==============================================================================
 def safe_int(val):
     try:
         if pd.isna(val) or val is None or str(val).strip() == "" or str(val).strip().lower() == "none":
@@ -26,34 +29,6 @@ def safe_int(val):
         return int(float(val))
     except (ValueError, TypeError):
         return 0
-
-# ==============================================================================
-# DATABASE KONTRAK & SIDEBAR SURAT WORD
-# ==============================================================================
-@st.cache_data
-def load_database():
-    if os.path.exists("database_kontrak.json"):
-        with open("database_kontrak.json", "r") as f:
-            return json.load(f)
-    return {}
-
-db_kontrak = load_database()
-
-st.sidebar.header("📌 Pengaturan Dokumen Word")
-wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["CAB. PALEMBANG", "CAB. MEDAN", "CAB. SIBOLGA NIAS", "CAB. BABEL"]
-selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
-
-wilayah_display = selected_wilayah.replace("CAB. ", "").replace("CAB ", "").strip()
-
-kontrak_options = db_kontrak.get(selected_wilayah, [])
-if not kontrak_options:
-    kontrak_options = ["-"]
-
-st.sidebar.markdown("---")
-st.sidebar.header("📝 Informasi Header Surat")
-nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
-tanggal_surat = st.sidebar.text_input("Tanggal Surat", "19 Oktober 2026")
-nama_manager = st.sidebar.text_input("Nama Manager Cabang", "NAMA MANAGER")
 
 # Fungsi Ekstraksi Periode ("19 Oktober 2026" -> "Oktober 2026")
 def extract_periode(tanggal_str):
@@ -102,6 +77,42 @@ def set_cell_border(cell):
         </w:tcBorders>
     ''' % nsdecls('w'))
     tcPr.append(tcBorders)
+
+# ==============================================================================
+# DATABASE KONTRAK & SIDEBAR SURAT WORD
+# ==============================================================================
+@st.cache_data
+def load_database():
+    possible_paths = [
+        "database_kontrak.json",
+        os.path.join("project-bpjs", "database_kontrak.json")
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
+
+db_kontrak = load_database()
+
+st.sidebar.header("📌 Pengaturan Dokumen Word")
+wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["CAB. PALEMBANG", "CAB. MEDAN", "CAB. SIBOLGA NIAS", "CAB. BABEL"]
+selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
+
+wilayah_display = selected_wilayah.replace("CAB. ", "").replace("CAB ", "").strip()
+
+kontrak_options = db_kontrak.get(selected_wilayah, [])
+if not kontrak_options:
+    kontrak_options = ["-"]
+
+st.sidebar.markdown("---")
+st.sidebar.header("📝 Informasi Header Surat")
+nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
+tanggal_surat = st.sidebar.text_input("Tanggal Surat", "19 Oktober 2026")
+nama_manager = st.sidebar.text_input("Nama Manager Cabang", "NAMA MANAGER")
 
 tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS & NPP)", "🏥 BPJS Kesehatan (Billing Statement)"])
 
@@ -326,7 +337,7 @@ with tab1:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            # 2. Download Word Docx (Menggunakan Template_DEFAULT_ketenagakerjaan.docx Anda)
+            # 2. Download Word Docx
             with col2:
                 st.markdown("##### 📝 Export Surat Word (.docx)")
                 template_path = os.path.join("templates", "Template_DEFAULT_ketenagakerjaan.docx")
@@ -366,8 +377,8 @@ with tab1:
 
                     if target_p:
                         spacer_top = doc_native.add_paragraph()
-                        spacer_top.paragraph_format.space_before = Pt(0)
-                        spacer_top.paragraph_format.space_after = Pt(0)
+                        spacer_top.paragraph_format.space_before = Pt(4)
+                        spacer_top.paragraph_format.space_after = Pt(4)
                         target_p._p.addnext(spacer_top._p)
                         insert_point = spacer_top
                     else:
@@ -393,20 +404,23 @@ with tab1:
                     records = edited_df.to_dict(orient="records")
                     for row_data in records:
                         val_iuran = float(row_data["Total Pembayaran"])
-                        formatted_iuran = f"Rp {val_iuran:,.0f}".replace(",", ".")
+                        formatted_iuran = f"Rp\t{val_iuran:,.0f}".replace(",", ".")
 
                         row_cells = new_table.add_row().cells
                         row_cells[0].text = str(row_data["NO"])
                         row_cells[1].text = str(row_data["NPP"])
                         row_cells[2].text = str(row_data["Nomor Kontrak"])
                         row_cells[3].text = str(safe_int(row_data["Jumlah Tenaga Kerja"]))
-                        row_cells[4].text = formatted_iuran
+                        
+                        p_iuran = row_cells[4].paragraphs[0]
+                        p_iuran.text = formatted_iuran
+                        p_iuran.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        p_iuran.paragraph_format.tab_stops.add_tab_stop(Inches(1.75), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
 
                         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
                         row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        row_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
                         for c_idx in range(5):
                             set_cell_border(row_cells[c_idx])
@@ -415,22 +429,26 @@ with tab1:
                     total_cells = new_table.add_row().cells
                     total_cells[0].text = "Jumlah"
                     total_cells[3].text = str(total_tk_sum)
-                    total_cells[4].text = f"Rp {total_iuran_sum:,.0f}".replace(",", ".")
+
+                    p_tot_iuran = total_cells[4].paragraphs[0]
+                    p_tot_iuran.text = f"Rp\t{total_iuran_sum:,.0f}".replace(",", ".")
+                    p_tot_iuran.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    p_tot_iuran.paragraph_format.tab_stops.add_tab_stop(Inches(1.75), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
+                    if p_tot_iuran.runs:
+                        p_tot_iuran.runs[0].font.bold = True
 
                     total_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     total_cells[0].paragraphs[0].runs[0].font.bold = True
                     total_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     total_cells[3].paragraphs[0].runs[0].font.bold = True
-                    total_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                    total_cells[4].paragraphs[0].runs[0].font.bold = True
 
                     for c_idx in range(5):
                         set_cell_border(total_cells[c_idx])
                         total_cells[c_idx].width = widths[c_idx]
 
                     spacer_bottom = doc_native.add_paragraph()
-                    spacer_bottom.paragraph_format.space_before = Pt(0)
-                    spacer_bottom.paragraph_format.space_after = Pt(0)
+                    spacer_bottom.paragraph_format.space_before = Pt(6)
+                    spacer_bottom.paragraph_format.space_after = Pt(6)
                     new_table._tbl.addnext(spacer_bottom._p)
 
                     doc_io = io.BytesIO()
@@ -602,8 +620,8 @@ with tab2:
 
                     if target_p:
                         spacer_top_kes = doc_native.add_paragraph()
-                        spacer_top_kes.paragraph_format.space_before = Pt(8)
-                        spacer_top_kes.paragraph_format.space_after = Pt(8)
+                        spacer_top_kes.paragraph_format.space_before = Pt(4)
+                        spacer_top_kes.paragraph_format.space_after = Pt(4)
                         target_p._p.addnext(spacer_top_kes._p)
                         insert_point_kes = spacer_top_kes
                     else:
@@ -628,20 +646,23 @@ with tab2:
 
                     for r_data in records_kes:
                         val_tagihan = float(r_data["Total Iuran"])
-                        formatted_tagihan = f"Rp {val_tagihan:,.0f}".replace(",", ".")
+                        formatted_tagihan = f"Rp\t{val_tagihan:,.0f}".replace(",", ".")
 
                         row_cells = new_table.add_row().cells
                         row_cells[0].text = str(r_data["NO"])
                         row_cells[1].text = str(r_data["Nama Perusahaan"])
                         row_cells[2].text = str(r_data["Nomor VA"])
-                        row_cells[3].text = str(int(r_data["Jumlah Tenaga Kerja"]))
-                        row_cells[4].text = formatted_tagihan
+                        row_cells[3].text = str(safe_int(r_data["Jumlah Tenaga Kerja"]))
+                        
+                        p_tagihan = row_cells[4].paragraphs[0]
+                        p_tagihan.text = formatted_tagihan
+                        p_tagihan.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        p_tagihan.paragraph_format.tab_stops.add_tab_stop(Inches(1.55), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
 
                         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
                         row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        row_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
                         for c_idx in range(5):
                             set_cell_border(row_cells[c_idx])
@@ -650,22 +671,26 @@ with tab2:
                     total_cells = new_table.add_row().cells
                     total_cells[0].text = "Jumlah"
                     total_cells[3].text = str(total_tk_kes)
-                    total_cells[4].text = f"Rp {total_iuran_kes:,.0f}".replace(",", ".")
+
+                    p_tot_kes = total_cells[4].paragraphs[0]
+                    p_tot_kes.text = f"Rp\t{total_iuran_kes:,.0f}".replace(",", ".")
+                    p_tot_kes.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    p_tot_kes.paragraph_format.tab_stops.add_tab_stop(Inches(1.55), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
+                    if p_tot_kes.runs:
+                        p_tot_kes.runs[0].font.bold = True
 
                     total_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     total_cells[0].paragraphs[0].runs[0].font.bold = True
                     total_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     total_cells[3].paragraphs[0].runs[0].font.bold = True
-                    total_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                    total_cells[4].paragraphs[0].runs[0].font.bold = True
 
                     for c_idx in range(5):
                         set_cell_border(total_cells[c_idx])
                         total_cells[c_idx].width = widths_kes[c_idx]
 
                     spacer_bottom_kes = doc_native.add_paragraph()
-                    spacer_bottom_kes.paragraph_format.space_before = Pt(14)
-                    spacer_bottom_kes.paragraph_format.space_after = Pt(14)
+                    spacer_bottom_kes.paragraph_format.space_before = Pt(6)
+                    spacer_bottom_kes.paragraph_format.space_after = Pt(6)
                     new_table._tbl.addnext(spacer_bottom_kes._p)
 
                     doc_io_kes = io.BytesIO()
