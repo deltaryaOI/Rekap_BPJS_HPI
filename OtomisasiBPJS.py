@@ -78,6 +78,18 @@ def set_cell_border(cell):
     ''' % nsdecls('w'))
     tcPr.append(tcBorders)
 
+# Mapping Nama Cabang Ke Nama Kota Kedudukan Surat
+MAPPING_KOTA = {
+    "PALEMBANG": "Palembang",
+    "MEDAN": "Medan",
+    "SIBOLGA NIAS": "Sibolga",
+    "BABEL": "Pangkalpinang",
+    "BANGKA BELITUNG": "Pangkalpinang",
+    "JAWA TIMUR": "Surabaya",
+    "JAWA TENGAH": "Semarang",
+    "DKI JAKARTA": "Jakarta"
+}
+
 # ==============================================================================
 # DATABASE KONTRAK & SIDEBAR SURAT WORD
 # ==============================================================================
@@ -103,6 +115,7 @@ wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["CAB. PALEMBANG", "CA
 selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
 
 wilayah_display = re.sub(r'(?i)\bcab\.?\s*', '', selected_wilayah).strip()
+nama_kota = MAPPING_KOTA.get(wilayah_display.upper(), wilayah_display.title())
 
 kontrak_options = db_kontrak.get(selected_wilayah, [])
 if not kontrak_options:
@@ -349,6 +362,7 @@ with tab1:
                     periode_surat = extract_periode(tanggal_surat)
 
                     context = {
+                        "Kota": nama_kota,
                         "Wilayah": wilayah_display,
                         "Tanggal": tanggal_surat,
                         "Periode": periode_surat,
@@ -466,7 +480,7 @@ with tab1:
                     st.error("Template Word Ketenagakerjaan belum ditemukan di `templates/`!")
 
 # ==============================================================================
-# TAB 2: BPJS KESEHATAN
+# TAB 2: BPJS KESEHATAN (INTERAKTIF & TABEL WORD 6 KOLOM)
 # ==============================================================================
 with tab2:
     st.subheader("Rekap PDF Billing Statement & Generator Surat BPJS Kesehatan")
@@ -491,11 +505,12 @@ with tab2:
                             raw_text += text + "\n"
 
                 clean_text = raw_text.replace('\n', ' ').replace('|', '')
+                default_spk = kontrak_options[0] if (kontrak_options and len(kontrak_options) > 0) else "-"
 
                 data_kes = {
-                    "Nama File": file.name,
                     "Nama Perusahaan": "-",
                     "Nomor VA": "-",
+                    "Nomor Kontrak": str(default_spk),
                     "Jumlah Tenaga Kerja": 0,
                     "Total Iuran": 0.0
                 }
@@ -532,31 +547,42 @@ with tab2:
                     clean_angka = raw_angka.replace('.', '')
                     data_kes["Total Iuran"] = float(clean_angka)
 
+                all_data_kes.append(data_kes)
+
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat membaca file {file.name}: {e}")
 
-            all_data_kes.append(data_kes)
-
         if all_data_kes:
-            df_kes = pd.DataFrame(all_data_kes)
-            df_kes.reset_index(drop=True, inplace=True)
-            df_kes["NO"] = [idx + 1 for idx in range(len(df_kes))]
+            df_kes_raw = pd.DataFrame(all_data_kes)
+            
+            st.subheader("✏️ Edit Data & Nomor Kontrak (SPK) BPJS Kesehatan")
+            st.caption("💡 Klik 2x sel di bawah ini untuk mengedit data secara langsung.")
 
-            st.success("Ekstraksi BPJS Kesehatan Selesai!")
-            st.write("### Preview Master Rekap BPJS Kesehatan:")
+            with st.expander("📌 Lihat Daftar Nomor Kontrak (SPK) Cabang Ini"):
+                for opt in kontrak_options:
+                    st.code(opt, language="text")
 
-            def format_indo(angka):
-                return f"{angka:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            def format_bulat_indo(angka):
-                return f"{angka:,}".replace(",", ".")
+            column_config_kes = {
+                "Nama Perusahaan": st.column_config.TextColumn("Nama Perusahaan / BU"),
+                "Nomor VA": st.column_config.TextColumn("Nomor VA"),
+                "Nomor Kontrak": st.column_config.TextColumn("Nomor Kontrak (SPK)", width="large"),
+                "Jumlah Tenaga Kerja": st.column_config.NumberColumn("Jml TK", format="%d"),
+                "Total Iuran": st.column_config.NumberColumn("Total Tagihan (Rp)", format="Rp %.2f")
+            }
 
-            st.dataframe(df_kes.style.format({
-                "Total Iuran": format_indo,
-                "Jumlah Tenaga Kerja": format_bulat_indo
-            }))
+            edited_df_kes = st.data_editor(
+                df_kes_raw,
+                column_config=column_config_kes,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_combine_kes_{selected_wilayah}_{len(uploaded_files_kes)}"
+            )
 
-            total_iuran_kes = float(df_kes["Total Iuran"].sum())
-            total_tk_kes = int(df_kes["Jumlah Tenaga Kerja"].sum())
+            edited_df_kes.reset_index(drop=True, inplace=True)
+            edited_df_kes["NO"] = [idx + 1 for idx in range(len(edited_df_kes))]
+
+            total_iuran_kes = float(edited_df_kes["Total Iuran"].sum())
+            total_tk_kes = int(edited_df_kes["Jumlah Tenaga Kerja"].sum())
             terbilang_kes = (terbilang(total_iuran_kes).strip() + " Rupiah") if total_iuran_kes > 0 else "-"
 
             st.markdown(f"### **Total Tagihan BPJS Kesehatan:** Rp {total_iuran_kes:,.0f}".replace(",", "."))
@@ -565,21 +591,68 @@ with tab2:
             st.subheader("📥 Unduh Hasil Dokumen BPJS Kesehatan")
             col1, col2 = st.columns(2)
 
-            # 1. Excel BPJS Kesehatan
+            # 1. Export Excel BPJS Kesehatan
             with col1:
                 st.markdown("##### 📊 Export Master Excel")
                 clean_filename_wilayah = wilayah_display.replace(".", "").replace(" ", "_")
-                excel_buffer_kes = io.BytesIO()
-                df_kes[["NO", "Nama File", "Nama Perusahaan", "Nomor VA", "Jumlah Tenaga Kerja", "Total Iuran"]].to_excel(excel_buffer_kes, index=False, engine='openpyxl')
+                excel_filename_kes = f"Rekap_BPJS_Kesehatan_{clean_filename_wilayah}.xlsx"
+                
+                output_excel_kes = io.BytesIO()
+                wb_kes = openpyxl.Workbook()
+                ws_kes = wb_kes.active
+                ws_kes.title = "Rekap BPJS Kesehatan"
+
+                font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+                fill_header = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+                font_data = Font(name="Calibri", size=11)
+                thin_border = Border(
+                    left=Side(style='thin', color='D9D9D9'),
+                    right=Side(style='thin', color='D9D9D9'),
+                    top=Side(style='thin', color='D9D9D9'),
+                    bottom=Side(style='thin', color='D9D9D9')
+                )
+
+                headers_kes = ["NO", "Nama Perusahaan", "Nomor VA", "Nomor Kontrak", "Jml TK", "Total Tagihan"]
+                ws_kes.append(headers_kes)
+                for col_num in range(1, len(headers_kes) + 1):
+                    cell = ws_kes.cell(row=1, column=col_num)
+                    cell.font = font_header
+                    cell.fill = fill_header
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+                records_kes = edited_df_kes.to_dict(orient="records")
+                for r_idx, row in enumerate(records_kes, start=2):
+                    ws_kes.cell(row=r_idx, column=1, value=int(row["NO"])).alignment = Alignment(horizontal="center")
+                    ws_kes.cell(row=r_idx, column=2, value=str(row["Nama Perusahaan"])).alignment = Alignment(horizontal="left")
+                    ws_kes.cell(row=r_idx, column=3, value=str(row["Nomor VA"])).alignment = Alignment(horizontal="center")
+                    ws_kes.cell(row=r_idx, column=4, value=str(row["Nomor Kontrak"])).alignment = Alignment(horizontal="left")
+                    ws_kes.cell(row=r_idx, column=5, value=safe_int(row["Jumlah Tenaga Kerja"])).alignment = Alignment(horizontal="center")
+                    
+                    c_cell = ws_kes.cell(row=r_idx, column=6, value=float(row["Total Iuran"]))
+                    c_cell.number_format = '"Rp "#,##0.00'
+                    c_cell.alignment = Alignment(horizontal="right")
+
+                    for c_idx in range(1, 7):
+                        c = ws_kes.cell(row=r_idx, column=c_idx)
+                        c.font = font_data
+                        c.border = thin_border
+
+                for col in ws_kes.columns:
+                    max_len = max(len(str(cell.value or '')) for cell in col)
+                    col_letter = get_column_letter(col[0].column)
+                    ws_kes.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+                wb_kes.save(output_excel_kes)
+                output_excel_kes.seek(0)
 
                 st.download_button(
                     label="📥 Download Master Excel BPJS Kesehatan",
-                    data=excel_buffer_kes.getvalue(),
-                    file_name=f"Master_Rekap_BPJS_Kesehatan_{clean_filename_wilayah}.xlsx",
+                    data=output_excel_kes.getvalue(),
+                    file_name=excel_filename_kes,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            # 2. Export Word Docx BPJS Kesehatan
+            # 2. Export Word Docx BPJS Kesehatan (6 Kolom: NO, BU, NOMOR SPK, VA, JML TK, TOTAL)
             with col2:
                 st.markdown("##### 📝 Export Surat Word (.docx)")
                 template_kes_path = os.path.join("templates", "Template_DEFAULT_kesehatan.docx")
@@ -591,6 +664,7 @@ with tab2:
                     periode_kes = extract_periode(tanggal_surat)
 
                     context = {
+                        "Kota": nama_kota,
                         "Wilayah": wilayah_display,
                         "Tanggal": tanggal_surat,
                         "Periode": periode_kes,
@@ -607,7 +681,6 @@ with tab2:
                     temp_stream.seek(0)
 
                     doc_native = docx.Document(temp_stream)
-                    records_kes = df_kes.to_dict(orient="records")
 
                     target_p = None
                     for p in doc_native.paragraphs:
@@ -627,15 +700,16 @@ with tab2:
                     else:
                         insert_point_kes = target_p
 
-                    new_table = doc_native.add_table(rows=0, cols=5)
+                    # Tabel 6 Kolom
+                    new_table = doc_native.add_table(rows=0, cols=6)
                     new_table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
                     if insert_point_kes:
                         insert_point_kes._p.addnext(new_table._tbl)
 
                     hdr_cells = new_table.add_row().cells
-                    headers_kes_docx = ["NO", "NAMA BADAN USAHA/SPK", "NOMOR VA", "JML TK", "TOTAL TAGIHAN"]
-                    widths_kes = [Inches(0.5), Inches(3.0), Inches(1.8), Inches(0.8), Inches(1.6)]
+                    headers_kes_docx = ["NO", "NAMA BADAN USAHA", "NOMOR SPK", "NOMOR VA", "JML TK", "TOTAL TAGIHAN"]
+                    widths_kes = [Inches(0.4), Inches(2.2), Inches(2.2), Inches(1.3), Inches(0.6), Inches(1.3)]
                     
                     for idx, text in enumerate(headers_kes_docx):
                         hdr_cells[idx].text = text
@@ -651,40 +725,43 @@ with tab2:
                         row_cells = new_table.add_row().cells
                         row_cells[0].text = str(r_data["NO"])
                         row_cells[1].text = str(r_data["Nama Perusahaan"])
-                        row_cells[2].text = str(r_data["Nomor VA"])
-                        row_cells[3].text = str(safe_int(r_data["Jumlah Tenaga Kerja"]))
+                        row_cells[2].text = str(r_data["Nomor Kontrak"])
+                        row_cells[3].text = str(r_data["Nomor VA"])
+                        row_cells[4].text = str(safe_int(r_data["Jumlah Tenaga Kerja"]))
                         
-                        p_tagihan = row_cells[4].paragraphs[0]
+                        p_tagihan = row_cells[5].paragraphs[0]
                         p_tagihan.text = formatted_tagihan
                         p_tagihan.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                        p_tagihan.paragraph_format.tab_stops.add_tab_stop(Inches(1.55), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
+                        p_tagihan.paragraph_format.tab_stops.add_tab_stop(Inches(1.25), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
 
                         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                         row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
-                        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
                         row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        row_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                        for c_idx in range(5):
+                        for c_idx in range(6):
                             set_cell_border(row_cells[c_idx])
                             row_cells[c_idx].width = widths_kes[c_idx]
 
+                    # Baris Total (Jumlah)
                     total_cells = new_table.add_row().cells
                     total_cells[0].text = "Jumlah"
-                    total_cells[3].text = str(total_tk_kes)
+                    total_cells[4].text = str(total_tk_kes)
 
-                    p_tot_kes = total_cells[4].paragraphs[0]
+                    p_tot_kes = total_cells[5].paragraphs[0]
                     p_tot_kes.text = f"Rp\t{total_iuran_kes:,.0f}".replace(",", ".")
                     p_tot_kes.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    p_tot_kes.paragraph_format.tab_stops.add_tab_stop(Inches(1.55), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
+                    p_tot_kes.paragraph_format.tab_stops.add_tab_stop(Inches(1.25), docx.enum.text.WD_TAB_ALIGNMENT.RIGHT)
                     if p_tot_kes.runs:
                         p_tot_kes.runs[0].font.bold = True
 
                     total_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                     total_cells[0].paragraphs[0].runs[0].font.bold = True
-                    total_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    total_cells[3].paragraphs[0].runs[0].font.bold = True
+                    total_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    total_cells[4].paragraphs[0].runs[0].font.bold = True
 
-                    for c_idx in range(5):
+                    for c_idx in range(6):
                         set_cell_border(total_cells[c_idx])
                         total_cells[c_idx].width = widths_kes[c_idx]
 
