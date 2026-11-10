@@ -617,7 +617,7 @@ with tab1:
 
             tab_sheet_target_tk = st.text_input(
                 "Nama Tab Google Sheet Target", 
-                "01. REKAP 11.26", 
+                "01. REKAP 2026", 
                 key="target_sheet_tk"
             )
 
