@@ -641,12 +641,12 @@ with tab1:
                 st.warning(f"Tidak dapat memuat daftar tab secara otomatis: {e}")
                 tab_sheet_target_tk = st.text_input("Nama Tab Google Sheet Target (Manual)", "01. REKAP 11.26", key="target_sheet_tk")
 
-            if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+            if st.button("🔄 Sync Data NPP ke Google Sheet", type="primary", key="btn_sync_tk"):
+                with st.spinner("Sedang Mensinkronisasi NPP dan Mengirim Data ke Google Sheet"):
                     is_icon_selected = (target_sheet_choice == "Sheet Rekap Cabang ICON")
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
+                        st.success(f"BERHASIL! {res} Data NPP Berhasil di-Update di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
