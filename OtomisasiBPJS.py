@@ -28,8 +28,85 @@ NAMA_BULAN = [
 now = datetime.datetime.now()
 tanggal_hari_ini = f"{now.day} {NAMA_BULAN[now.month]} {now.year}"
 
-st.set_page_config(page_title="Master Rekap & Generator Surat BPJS", layout="wide")
-st.title("📄 Master Rekap & Generator Dokumen BPJS")
+# 1. KONFIGURASI HALAMAN (HARUS PALING PERTAMA DARI ELEMEN STREAMLIT)
+st.set_page_config(
+    page_title="Master Rekap & Generator Dokumen BPJS",
+    page_icon="📄",
+    layout="wide"
+)
+
+# 2. INJECT CUSTOM CSS TEMA BIRU & ORANYE (TARUH DI SINI)
+st.markdown("""
+    <style>
+        /* 1. Sembunyikan scrollbar di sidebar & rapatkan elemen */
+        [data-testid="stSidebar"] > div:first-child {
+            overflow: hidden !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            gap: 0.5rem !important;
+        }
+
+        /* 2. Background Sidebar & Border Oranye */
+        [data-testid="stSidebar"] {
+            background-color: #F0F4F9 !important;
+            border-right: 3px solid #FF7A00 !important;
+        }
+
+        /* 3. TEKS JUDUL & LABEL SIDEBAR: Biru Navy Gelap (Lebih Adem & Sangat Jelas) */
+        [data-testid="stSidebar"] label, 
+        [data-testid="stSidebar"] p, 
+        [data-testid="stSidebar"] h1, 
+        [data-testid="stSidebar"] h2, 
+        [data-testid="stSidebar"] h3 {
+            color: #0A2540 !important;
+            font-weight: 700 !important;
+        }
+
+        /* 4. ISIAN DALAM BOX INPUT SIDEBAR: Background Putih, Teks Navy Solid */
+        [data-testid="stSidebar"] input, 
+        [data-testid="stSidebar"] div[data-baseweb="select"] * {
+            background-color: #FFFFFF !important;
+            color: #0A2540 !important;
+            font-weight: 600 !important;
+        }
+
+        /* 5. JUDUL DI AREA UTAMA: Biru Muda Cyan (Menyala di Dark Mode) */
+        h1, h2, h3, [data-testid="stHeader"] {
+            color: #4CC9FE !important;
+            font-weight: 700 !important;
+        }
+
+        /* 6. Garis Pemisah (Divider `---`) Warna Oranye */
+        hr {
+            border-top: 2px solid #FF7A00 !important;
+            margin: 1rem 0 !important;
+        }
+
+        /* 7. Custom Tombol Sync / Primary Button (Biru Tua + Hover Oranye) */
+        div.stButton > button[kind="primary"] {
+            background-color: #0F4C81 !important;
+            color: #FFFFFF !important;
+            border: 2px solid #FF7A00 !important;
+            border-radius: 8px !important;
+            font-weight: bold !important;
+            transition: all 0.3s ease !important;
+        }
+        div.stButton > button[kind="primary"]:hover {
+            background-color: #FF7A00 !important;
+            color: #FFFFFF !important;
+            border-color: #0F4C81 !important;
+            box-shadow: 0px 4px 12px rgba(255, 122, 0, 0.4) !important;
+        }
+        div.stButton > button[kind="primary"] * {
+            color: #FFFFFF !important;
+        }
+
+        /* 8. Radio Button Accent (Oranye) */
+        div[role="radiogroup"] label[data-baseweb="radio"] div:first-child {
+            background-color: #FF7A00 !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------------------
 # HILANGKAN SCROLLBAR SIDEBAR & RAPATKAN JARAK ELEMEN
@@ -641,12 +718,12 @@ with tab1:
                 st.warning(f"Tidak dapat memuat daftar tab secara otomatis: {e}")
                 tab_sheet_target_tk = st.text_input("Nama Tab Google Sheet Target (Manual)", "01. REKAP 11.26", key="target_sheet_tk")
 
-            if st.button("🔄 Sync Data NPP ke Google Sheet", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang Mensinkronisasi NPP dan Mengirim Data ke Google Sheet"):
+            if st.button("⚡ Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
+                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
                     is_icon_selected = (target_sheet_choice == "Sheet Rekap Cabang ICON")
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} Data NPP Berhasil di-Update di Google Sheet!")
+                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
