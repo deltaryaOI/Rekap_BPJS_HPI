@@ -6,7 +6,9 @@ import os
 import re
 import io
 import docx
+import datetime
 import math
+import openpyxl
 import gspread
 from google.oauth2.service_account import Credentials
 from docx.shared import Inches, Pt
@@ -15,12 +17,35 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 from docxtpl import DocxTemplate
-import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+# Helper Format Tanggal Hari Ini ke Bahasa Indonesia
+NAMA_BULAN = [
+    "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+]
+now = datetime.datetime.now()
+tanggal_hari_ini = f"{now.day} {NAMA_BULAN[now.month]} {now.year}"
+
 st.set_page_config(page_title="Master Rekap & Generator Surat BPJS", layout="wide")
 st.title("📄 Master Rekap & Generator Dokumen BPJS")
+
+# ------------------------------------------------------------------------------
+# HILANGKAN SCROLLBAR SIDEBAR & RAPATKAN JARAK ELEMEN
+# ------------------------------------------------------------------------------
+st.markdown("""
+    <style>
+        /* Sembunyikan scrollbar di sidebar */
+        [data-testid="stSidebar"] > div:first-child {
+            overflow: hidden !important;
+        }
+        /* Rapatkan jarak vertikal antar elemen di sidebar */
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            gap: 0.5rem !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
 # FUNGSI KEAMANAN & HELPER
@@ -173,6 +198,7 @@ MAPPING_KOTA = {
 def load_database():
     possible_paths = [
         "database_kontrak.json",
+        "database.json",
         os.path.join("project-bpjs", "database_kontrak.json")
     ]
     for path in possible_paths:
@@ -187,21 +213,44 @@ def load_database():
 db_kontrak = load_database()
 
 st.sidebar.header("📌 Pengaturan Dokumen Word")
-wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["CAB. PALEMBANG", "CAB. MEDAN", "CAB. SIBOLGA NIAS", "CAB. BABEL"]
+wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["Cab. Palembang", "Cab. Medan", "Cab. Sibolga Nias", "Cab. Bangka Belitung"]
 selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
 
+# --- TAMBAHKAN BARIS INI KEMBALI AGAR ERROR HILANG ---
 wilayah_display = re.sub(r'(?i)\bcab\.?\s*', '', selected_wilayah).strip()
-nama_kota = MAPPING_KOTA.get(wilayah_display.upper(), wilayah_display.title())
 
-kontrak_options = db_kontrak.get(selected_wilayah, [])
+# Ambil data lengkap cabang dari JSON (kota, manager, spk)
+data_cabang = db_kontrak.get(selected_wilayah, {})
+
+# Auto-extract Nama Kota, Manager, dan List Kontrak
+nama_kota = data_cabang.get("kota", wilayah_display.title())
+default_manager = data_cabang.get("manager", "NAMA MANAGER")
+kontrak_options = data_cabang.get("spk", ["-"])
+
 if not kontrak_options:
     kontrak_options = ["-"]
 
 st.sidebar.markdown("---")
 st.sidebar.header("📝 Informasi Header Surat")
 nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
-tanggal_surat = st.sidebar.text_input("Tanggal Surat", "19 Oktober 2026")
-nama_manager = st.sidebar.text_input("Nama Manager Cabang", "NAMA MANAGER")
+# Tanggal Surat Otomatis Terisi Hari Ini
+tanggal_surat = st.sidebar.text_input("Tanggal Surat", value=tanggal_hari_ini) 
+# Manager Otomatis dari JSON (Bisa Diedit Manual Jika Diperlukan)
+nama_manager = st.sidebar.text_input("Nama Manager Cabang", value=default_manager)
+
+# ------------------------------------------------------------------------------
+# KODE LOGO DITARUH DI SINI (Masih di dalam area sidebar)
+# ------------------------------------------------------------------------------
+
+if os.path.exists("logo.png"):
+    st.sidebar.markdown("---")
+    col1, col2, col3 = st.sidebar.columns([1, 3, 1])
+    with col2:
+        st.image("logo.png", use_container_width=True)
+    
+# ------------------------------------------------------------------------------
+# SETELAH ITU BARU MASUK KE TAB UTAMA
+# ------------------------------------------------------------------------------
 
 tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS & NPP)", "🏥 BPJS Kesehatan (Billing Statement)"])
 
