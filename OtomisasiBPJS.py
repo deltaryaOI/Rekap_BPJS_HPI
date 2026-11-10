@@ -33,6 +33,8 @@ def safe_int(val):
     except (ValueError, TypeError):
         return 0
 
+import math
+
 # Helper pembulatan khusus (0.01 - 0.50 tetap/turun, 0.51 - 0.99 naik 1)
 def custom_round(val):
     try:
@@ -47,7 +49,7 @@ def custom_round(val):
     except (ValueError, TypeError):
         return 0
 
-# Fungsi Sinkronisasi Data ke Google Sheet Berdasarkan NPP (Update Pemetaaan Kolom O, P, Q, R)
+# Fungsi Sinkronisasi Data ke Google Sheet Berdasarkan NPP (Update SPK Kolom E, TK Kolom J, Iuran O-R)
 def sync_to_google_sheet(df_edited, nama_tab_sheet):
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -71,10 +73,13 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet):
             if npp_pdf in npp_list:
                 row_idx = npp_list.index(npp_pdf) + 1  # Baris Excel di Google Sheet
                 
-                # 1. Update Jumlah TK di Kolom J (Kolom ke-10)
+                # 1. Update Nomor SPK (Kontrak) di Kolom E (Kolom ke-5)
+                worksheet.update_cell(row_idx, 5, str(row["Nomor Kontrak"]))
+                
+                # 2. Update Jumlah TK di Kolom J (Kolom ke-10)
                 worksheet.update_cell(row_idx, 10, safe_int(row["Jumlah Tenaga Kerja"]))
                 
-                # 2. Update Nilai Iuran dengan Pembulatan Kustom di Kolom O, P, Q, R (Kolom ke-15 s/d 18)
+                # 3. Update Nilai Iuran dengan Pembulatan Kustom di Kolom O, P, Q, R (Kolom ke-15 s/d 18)
                 worksheet.update_cell(row_idx, 15, custom_round(row["Total Iuran JKK"]))  # Kolom O (JKK)
                 worksheet.update_cell(row_idx, 16, custom_round(row["Total Iuran JHT"]))  # Kolom P (JHT)
                 worksheet.update_cell(row_idx, 17, custom_round(row["Total Iuran JKM"]))  # Kolom Q (JKM)
