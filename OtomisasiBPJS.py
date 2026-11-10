@@ -49,19 +49,38 @@ def custom_round(val):
     except (ValueError, TypeError):
         return 0
 
-# Fungsi Sinkronisasi Data ke Google Sheet Berdasarkan NPP (Update SPK Kolom E, TK Kolom J, Iuran O-R)
-def sync_to_google_sheet(df_edited, nama_tab_sheet):
+# Fungsi Sinkronisasi Data ke Google Sheet (Mendukung Sheet Utama HPI & Cabang ICON)
+def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         client = gspread.authorize(creds)
         
-        sheet_url = st.secrets["SPREADSHEET_URL"]
+        # 1. Tentukan URL & Pemetaan Kolom berdasarkan pilihan Target Sheet
+        if is_icon:
+            sheet_url = st.secrets.get("SPREADSHEET_URL_ICON", st.secrets["SPREADSHEET_URL"])
+            col_npp_search = 8   # Kolom H (NPP ICON)
+            col_spk = 5          # Kolom E (SPK)
+            col_tk = 9           # Kolom I (Jumlah TK ICON)
+            col_jkk = 14         # Kolom N (JKK ICON)
+            col_jht = 15         # Kolom O (JHT ICON)
+            col_jkm = 16         # Kolom P (JKM ICON)
+            col_jpn = 17         # Kolom Q (JP ICON)
+        else:
+            sheet_url = st.secrets["SPREADSHEET_URL"]
+            col_npp_search = 9   # Kolom I (NPP HPI Utama)
+            col_spk = 5          # Kolom E (SPK)
+            col_tk = 10          # Kolom J (Jumlah TK HPI Utama)
+            col_jkk = 15         # Kolom O (JKK HPI Utama)
+            col_jht = 16         # Kolom P (JHT HPI Utama)
+            col_jkm = 17         # Kolom Q (JKM HPI Utama)
+            col_jpn = 18         # Kolom R (JP HPI Utama)
+            
         sh = client.open_by_url(sheet_url)
         worksheet = sh.worksheet(nama_tab_sheet)
         
-        # Ambil daftar NPP dari Kolom I (Kolom ke-9: NO NPP PERUSAHAAN)
-        npp_list = worksheet.col_values(9)
+        # Ambil daftar NPP dari kolom pencarian yang sesuai
+        npp_list = worksheet.col_values(col_npp_search)
         
         updated_count = 0
         records = df_edited.to_dict(orient="records")
@@ -73,19 +92,13 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet):
             if npp_pdf in npp_list:
                 row_idx = npp_list.index(npp_pdf) + 1  # Baris Excel di Google Sheet
                 
-                # 1. Update Nomor SPK (Kontrak) di Kolom E (Kolom ke-5)
-                worksheet.update_cell(row_idx, 5, str(row["Nomor Kontrak"]))
-                
-                # 2. Update Jumlah TK di Kolom J (Kolom ke-10)
-                worksheet.update_cell(row_idx, 10, safe_int(row["Jumlah Tenaga Kerja"]))
-                
-                # 3. Update Nilai Iuran dengan Pembulatan Kustom di Kolom O, P, Q, R (Kolom ke-15 s/d 18)
-                worksheet.update_cell(row_idx, 15, custom_round(row["Total Iuran JKK"]))  # Kolom O (JKK)
-                worksheet.update_cell(row_idx, 16, custom_round(row["Total Iuran JHT"]))  # Kolom P (JHT)
-                worksheet.update_cell(row_idx, 17, custom_round(row["Total Iuran JKM"]))  # Kolom Q (JKM)
-                worksheet.update_cell(row_idx, 18, custom_round(row["Total Iuran JPN"]))  # Kolom R (JP)
-                
-                # Kolom S (Total Iuran) dibiarkan agar rumus SUM Google Sheet yang menghitung otomatis
+                # Update data secara dinamik sesuai sheet target
+                worksheet.update_cell(row_idx, col_spk, str(row["Nomor Kontrak"]))
+                worksheet.update_cell(row_idx, col_tk, safe_int(row["Jumlah Tenaga Kerja"]))
+                worksheet.update_cell(row_idx, col_jkk, custom_round(row["Total Iuran JKK"]))
+                worksheet.update_cell(row_idx, col_jht, custom_round(row["Total Iuran JHT"]))
+                worksheet.update_cell(row_idx, col_jkm, custom_round(row["Total Iuran JKM"]))
+                worksheet.update_cell(row_idx, col_jpn, custom_round(row["Total Iuran JPN"]))
                 
                 updated_count += 1
                 
@@ -545,17 +558,26 @@ with tab1:
             # Auto-Sync Google Sheets Khusus BPJS TK
             st.markdown("---")
             st.subheader("🚀 Auto-Sync ke Google Sheets (BPJS TK)")
+            
+            target_sheet_choice = st.radio(
+                "Pilih Target Google Sheet:",
+                ["Sheet Rekap Utama HPI", "Sheet Khusus Cabang ICON"],
+                horizontal=True,
+                key="target_sheet_choice_tk"
+            )
+
             tab_sheet_target_tk = st.text_input(
                 "Nama Tab Google Sheet Target", 
                 "01. REKAP 11.26", 
                 key="target_sheet_tk"
             )
 
-            if st.button("🔄 Sync Data PDF ke Google Sheet", type="primary", key="btn_sync_tk"):
-                with st.spinner("Proses Pengiriman Data ke Google Sheet..."):
-                    success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk)
+            if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
+                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+                    is_icon_selected = (target_sheet_choice == "Sheet Khusus Cabang ICON")
+                    success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} Data baris NPP Berhasil di-Update di Google Sheet!")
+                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
