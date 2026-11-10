@@ -551,11 +551,11 @@ with tab1:
                 key="target_sheet_tk"
             )
 
-            if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+            if st.button("🔄 Sync Data PDF ke Google Sheet", type="primary", key="btn_sync_tk"):
+                with st.spinner("Proses Pengiriman Data ke Google Sheet..."):
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk)
                     if success:
-                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
+                        st.success(f"BERHASIL! {res} Data baris NPP Berhasil di-Update di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
