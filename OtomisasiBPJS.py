@@ -6,6 +6,9 @@ import os
 import re
 import io
 import docx
+import math
+import gspread
+from google.oauth2.service_account import Credentials
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -29,6 +32,61 @@ def safe_int(val):
         return int(float(val))
     except (ValueError, TypeError):
         return 0
+
+# Helper pembulatan khusus (0.01 - 0.50 tetap/turun, 0.51 - 0.99 naik 1)
+def custom_round(val):
+    try:
+        val_float = float(val)
+        integer_part = int(val_float)
+        decimal_part = val_float - integer_part
+        
+        if decimal_part > 0.50:
+            return integer_part + 1
+        else:
+            return integer_part
+    except (ValueError, TypeError):
+        return 0
+
+# Fungsi Sinkronisasi Data ke Google Sheet Berdasarkan NPP (Update Pemetaaan Kolom O, P, Q, R)
+def sync_to_google_sheet(df_edited, nama_tab_sheet):
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        
+        sheet_url = st.secrets["SPREADSHEET_URL"]
+        sh = client.open_by_url(sheet_url)
+        worksheet = sh.worksheet(nama_tab_sheet)
+        
+        # Ambil daftar NPP dari Kolom I (Kolom ke-9: NO NPP PERUSAHAAN)
+        npp_list = worksheet.col_values(9)
+        
+        updated_count = 0
+        records = df_edited.to_dict(orient="records")
+        
+        for row in records:
+            npp_pdf = str(row["NPP"]).strip()
+            
+            # Cari posisi baris NPP yang cocok
+            if npp_pdf in npp_list:
+                row_idx = npp_list.index(npp_pdf) + 1  # Baris Excel di Google Sheet
+                
+                # 1. Update Jumlah TK di Kolom J (Kolom ke-10)
+                worksheet.update_cell(row_idx, 10, safe_int(row["Jumlah Tenaga Kerja"]))
+                
+                # 2. Update Nilai Iuran dengan Pembulatan Kustom di Kolom O, P, Q, R (Kolom ke-15 s/d 18)
+                worksheet.update_cell(row_idx, 15, custom_round(row["Total Iuran JKK"]))  # Kolom O (JKK)
+                worksheet.update_cell(row_idx, 16, custom_round(row["Total Iuran JHT"]))  # Kolom P (JHT)
+                worksheet.update_cell(row_idx, 17, custom_round(row["Total Iuran JKM"]))  # Kolom Q (JKM)
+                worksheet.update_cell(row_idx, 18, custom_round(row["Total Iuran JPN"]))  # Kolom R (JP)
+                
+                # Kolom S (Total Iuran) dibiarkan agar rumus SUM Google Sheet yang menghitung otomatis
+                
+                updated_count += 1
+                
+        return True, updated_count
+    except Exception as e:
+        return False, str(e)
 
 # Fungsi Ekstraksi Periode ("19 Oktober 2026" -> "Oktober 2026")
 def extract_periode(tanggal_str):
@@ -478,6 +536,23 @@ with tab1:
                     )
                 else:
                     st.error("Template Word Ketenagakerjaan belum ditemukan di `templates/`!")
+
+            # Auto-Sync Google Sheets Khusus BPJS TK
+            st.markdown("---")
+            st.subheader("🚀 Auto-Sync ke Google Sheets (BPJS TK)")
+            tab_sheet_target_tk = st.text_input(
+                "Nama Tab Google Sheet Target", 
+                "01. REKAP 11.26", 
+                key="target_sheet_tk"
+            )
+
+            if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
+                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+                    success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk)
+                    if success:
+                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
+                    else:
+                        st.error(f"Gagal melakukan sync: {res}")
 
 # ==============================================================================
 # TAB 2: BPJS KESEHATAN (INTERAKTIF & TABEL WORD 6 KOLOM)
