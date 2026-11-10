@@ -604,29 +604,49 @@ with tab1:
                 else:
                     st.error("Template Word Ketenagakerjaan belum ditemukan di `templates/`!")
 
-            # Auto-Sync Google Sheets Khusus BPJS TK
+            # ==============================================================================
+            # AUTO-SYNC GOOGLE SHEETS KHUSUS BPJS TK (DENGAN DROPDOWN TAB OTOMATIS)
+            # ==============================================================================
             st.markdown("---")
             st.subheader("🚀 Auto-Sync ke Google Sheets (BPJS TK)")
-            
+
             target_sheet_choice = st.radio(
                 "Pilih Target Google Sheet:",
-                ["Sheet Rekap Cabang HPI", "Sheet Khusus Cabang ICON"],
+                ["Sheet Rekap Cabang HPI", "Sheet Rekap Cabang ICON"],
                 horizontal=True,
                 key="target_sheet_choice_tk"
             )
 
-            tab_sheet_target_tk = st.text_input(
-                "Nama Tab Google Sheet Target", 
-                "01. REKAP 2026", 
-                key="target_sheet_tk"
-            )
+            # Ambil daftar nama tab dari Google Sheet secara otomatis
+            try:
+                scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+                client = gspread.authorize(creds)
+                
+                # Tentukan URL berdasarkan radio button yang dipilih
+                sheet_url = st.secrets.get("SPREADSHEET_URL_ICON") if target_sheet_choice == "Sheet Rekap Cabang ICON" else st.secrets["SPREADSHEET_URL"]
+                sh = client.open_by_url(sheet_url)
+                
+                # Ambil seluruh nama tab/worksheet yang ada di Google Sheet
+                available_tabs = [ws.title for ws in sh.worksheets()]
+                
+                # Tampilkan Dropdown pilihan Tab
+                tab_sheet_target_tk = st.selectbox(
+                    "Pilih Tab Google Sheet Target:", 
+                    available_tabs,
+                    key="target_sheet_tk"
+                )
+            except Exception as e:
+                # Fallback text input jika misal koneksi internet terganggu saat load tab
+                st.warning(f"Tidak dapat memuat daftar tab secara otomatis: {e}")
+                tab_sheet_target_tk = st.text_input("Nama Tab Google Sheet Target (Manual)", "01. REKAP 11.26", key="target_sheet_tk")
 
             if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang Synchronize NPP Dengan Google Sheet"):
-                    is_icon_selected = (target_sheet_choice == "Sheet Khusus Cabang ICON")
+                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+                    is_icon_selected = (target_sheet_choice == "Sheet Rekap Cabang ICON")
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} Data NPP Berhasil di-Update di Google Sheet!")
+                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
