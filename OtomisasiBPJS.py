@@ -610,7 +610,7 @@ with tab1:
             
             target_sheet_choice = st.radio(
                 "Pilih Target Google Sheet:",
-                ["Sheet Rekap Utama HPI", "Sheet Khusus Cabang ICON"],
+                ["Sheet Rekap Cabang HPI", "Sheet Khusus Cabang ICON"],
                 horizontal=True,
                 key="target_sheet_choice_tk"
             )
@@ -622,11 +622,11 @@ with tab1:
             )
 
             if st.button("🔄 Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+                with st.spinner("Sedang Synchronize NPP Dengan Google Sheet"):
                     is_icon_selected = (target_sheet_choice == "Sheet Khusus Cabang ICON")
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
+                        st.success(f"BERHASIL! {res} Data NPP Berhasil di-Update di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
