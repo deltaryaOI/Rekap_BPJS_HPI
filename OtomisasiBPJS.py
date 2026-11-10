@@ -97,7 +97,9 @@ st.markdown("""
             border-color: #0F4C81 !important;
             box-shadow: 0px 4px 12px rgba(255, 122, 0, 0.4) !important;
         }
-        div.stButton > button[kind="primary"] * {
+        /* Biarkan teks & emoji tombol bernapas alami tanpa dipaksa override saat diklik */
+        div.stButton > button[kind="primary"]:active {
+            background-color: #E66E00 !important;
             color: #FFFFFF !important;
         }
 
