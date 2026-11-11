@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
+import requests
+import base64
+import mimetypes
 import json
 import os
 import re
@@ -10,6 +13,7 @@ import datetime
 import math
 import openpyxl
 import gspread
+import mimetypes
 from google.oauth2.service_account import Credentials
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -19,6 +23,10 @@ from docx.oxml.ns import nsdecls
 from docxtpl import DocxTemplate
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# Modul Google Drive API
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 # Helper Format Tanggal Hari Ini ke Bahasa Indonesia
 NAMA_BULAN = [
@@ -132,6 +140,90 @@ def custom_round(val):
             return integer_part
     except (ValueError, TypeError):
         return 0
+
+# ==============================================================================
+# FUNGSI HELPER UPLOAD GOOGLE DRIVE UNIVERSAL (DENGAN DYNAMIC SUBFOLDER)
+# ==============================================================================
+def get_or_create_subfolder(drive_service, parent_id, folder_name):
+    try:
+        query = f"'{parent_id}' in parents and name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        results = drive_service.files().list(
+            q=query, 
+            fields="files(id, name)",
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        items = results.get('files', [])
+
+        if items:
+            return items[0]['id']
+        else:
+            folder_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [parent_id]
+            }
+            folder = drive_service.files().create(
+                body=folder_metadata, 
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
+            
+            folder_id = folder.get('id')
+            
+            # Pindahkan permission agar tidak mentok di Service Account
+            try:
+                drive_service.permissions().create(
+                    fileId=folder_id,
+                    body={'type': 'anyone', 'role': 'writer'},
+                    supportsAllDrives=True
+                ).execute()
+            except Exception:
+                pass
+
+            return folder_id
+    except Exception as e:
+        return parent_id
+
+def upload_to_dynamic_drive_folder(file_bytes, file_name, jenis_bpjs, tahun_str, bulan_str, cabang_str):
+    """
+    Mengunggah berkas via Google Apps Script Web App Bridge.
+    (100% Menggunakan Kuota Drive Akun Utama - Bebas Error 403 Storage Quota).
+    """
+    try:
+        gas_url = st.secrets.get("GAS_WEB_APP_URL", "")
+        if not gas_url:
+            return False, "GAS_WEB_APP_URL belum dikonfigurasi di secrets.toml!"
+
+        mime_type, _ = mimetypes.guess_type(file_name)
+        if not mime_type:
+            mime_type = 'application/octet-stream'
+
+        # Konversi file bytes ke format Base64 string
+        base64_data = base64.b64encode(file_bytes).decode('utf-8')
+        cabang_clean = cabang_str if cabang_str.startswith("Cabang") else f"Cabang {cabang_str.replace('Cab.', '').strip()}"
+
+        payload = {
+            "fileName": file_name,
+            "mimeType": mime_type,
+            "fileData": base64_data,
+            "jenis": jenis_bpjs,
+            "tahun": str(tahun_str),
+            "bulan": str(bulan_str),
+            "cabang": cabang_clean
+        }
+
+        # Kirim data ke Google Apps Script
+        response = requests.post(gas_url, json=payload, timeout=60)
+        res_json = response.json()
+
+        if res_json.get("status") == "success":
+            return True, res_json.get("fileId")
+        else:
+            return False, res_json.get("message")
+
+    except Exception as e:
+        return False, str(e)
 
 # Fungsi Sinkronisasi Data BPJS Ketenagakerjaan
 def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
@@ -1096,3 +1188,75 @@ with tab2:
                         st.success(f"BERHASIL! {res} berhasil di-Update ke Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
+
+# ==============================================================================
+# KOTAK KHUSUS UPLOAD BERKAS KE GOOGLE DRIVE (PDF, RAR, ZIP, EXCEL, WORD, DLL)
+# ==============================================================================
+st.markdown("---")
+st.subheader("☁️ Upload & Arsip Berkas Pendukung ke Google Drive")
+st.caption("Pilih hirarki folder tujuan, lalu upload berkas pendukung (PDF, RAR, ZIP, Excel, Word, dll).")
+
+with st.expander("📂 Buka Form Upload Berkas Google Drive", expanded=True):
+    col_d1, col_d2 = st.columns(2)
+    
+    with col_d1:
+        drive_kategori = st.selectbox(
+            "Target Kategori Folder:", 
+            ["BPJS Ketenagakerjaan", "BPJS Kesehatan", "DPLK"], 
+            key="drive_kategori"
+        )
+        drive_cabang = st.selectbox(
+            "Target Cabang / Wilayah:", 
+            wilayah_list, 
+            key="drive_cabang"
+        )
+        
+    with col_d2:
+        drive_tahun = st.selectbox(
+            "Target Tahun Folder:", 
+            ["2026", "2027", "2028"], 
+            index=0, 
+            key="drive_tahun"
+        )
+        drive_bulan = st.selectbox(
+            "Target Bulan Folder:", 
+            [
+                "01. Januari", "02. Februari", "03. Maret", "04. April", 
+                "05. Mei", "06. Juni", "07. Juli", "08. Agustus", 
+                "09. September", "10. Oktober", "11. November", "12. Desember"
+            ],
+            index=10, 
+            key="drive_bulan"
+        )
+
+    # File Uploader Bebas Jenis Berkas
+    drive_uploaded_files = st.file_uploader(
+        "Pilih file yang akan diunggah ke Google Drive (Bisa upload sekaligus banyak file):",
+        type=["pdf", "rar", "zip", "xlsx", "xls", "docx", "csv"],
+        accept_multiple_files=True,
+        key="uploader_google_drive"
+    )
+
+    if st.button("📤 Upload Berkas ke Google Drive Sekarang", type="primary", key="btn_upload_drive"):
+        if drive_uploaded_files:
+            with st.spinner("Sedang mengunggah berkas ke Google Drive..."):
+                success_count = 0
+                for f in drive_uploaded_files:
+                    f_bytes = f.getvalue()
+                    ok, res = upload_to_dynamic_drive_folder(
+                        file_bytes=f_bytes,
+                        file_name=f.name,
+                        jenis_bpjs=drive_kategori,
+                        tahun_str=drive_tahun,
+                        bulan_str=drive_bulan,
+                        cabang_str=drive_cabang
+                    )
+                    if ok:
+                        success_count += 1
+                    else:
+                        st.error(f"Gagal mengunggah {f.name}: {res}")
+                
+                if success_count > 0:
+                    st.success(f"BERHASIL! {success_count} berkas berhasil diarsipkan ke Google Drive di folder: {drive_kategori} / {drive_tahun} / {drive_bulan} / {drive_cabang}")
+        else:
+            st.warning("Pilih minimal 1 file terlebih dahulu sebelum menekan tombol upload!")
