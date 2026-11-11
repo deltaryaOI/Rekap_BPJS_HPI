@@ -35,7 +35,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. INJECT CUSTOM CSS TEMA BIRU & ORANYE (TARUH DI SINI)
+# 2. INJECT CUSTOM CSS TEMA BIRU & ORANYE
 st.markdown("""
     <style>
         /* 1. Sembunyikan scrollbar di sidebar & rapatkan elemen */
@@ -52,7 +52,7 @@ st.markdown("""
             border-right: 3px solid #FF7A00 !important;
         }
 
-        /* 3. TEKS JUDUL & LABEL SIDEBAR: Biru Navy Gelap (Lebih Adem & Sangat Jelas) */
+        /* 3. TEKS JUDUL & LABEL SIDEBAR: Biru Navy Gelap */
         [data-testid="stSidebar"] label, 
         [data-testid="stSidebar"] p, 
         [data-testid="stSidebar"] h1, 
@@ -70,19 +70,19 @@ st.markdown("""
             font-weight: 600 !important;
         }
 
-        /* 5. JUDUL DI AREA UTAMA: Biru Muda Cyan (Menyala di Dark Mode) */
+        /* 5. JUDUL DI AREA UTAMA: Biru Muda Cyan */
         h1, h2, h3, [data-testid="stHeader"] {
             color: #4CC9FE !important;
             font-weight: 700 !important;
         }
 
-        /* 6. Garis Pemisah (Divider `---`) Warna Oranye */
+        /* 6. Garis Pemisah Warna Oranye */
         hr {
             border-top: 2px solid #FF7A00 !important;
             margin: 1rem 0 !important;
         }
 
-        /* 7. Custom Tombol Sync / Primary Button (Biru Tua + Hover Oranye) */
+        /* 7. Custom Tombol Primary */
         div.stButton > button[kind="primary"] {
             background-color: #0F4C81 !important;
             color: #FFFFFF !important;
@@ -97,7 +97,6 @@ st.markdown("""
             border-color: #0F4C81 !important;
             box-shadow: 0px 4px 12px rgba(255, 122, 0, 0.4) !important;
         }
-        /* Biarkan teks & emoji tombol bernapas alami tanpa dipaksa override saat diklik */
         div.stButton > button[kind="primary"]:active {
             background-color: #E66E00 !important;
             color: #FFFFFF !important;
@@ -106,22 +105,6 @@ st.markdown("""
         /* 8. Radio Button Accent (Oranye) */
         div[role="radiogroup"] label[data-baseweb="radio"] div:first-child {
             background-color: #FF7A00 !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------------------
-# HILANGKAN SCROLLBAR SIDEBAR & RAPATKAN JARAK ELEMEN
-# ------------------------------------------------------------------------------
-st.markdown("""
-    <style>
-        /* Sembunyikan scrollbar di sidebar */
-        [data-testid="stSidebar"] > div:first-child {
-            overflow: hidden !important;
-        }
-        /* Rapatkan jarak vertikal antar elemen di sidebar */
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-            gap: 0.5rem !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -137,15 +120,12 @@ def safe_int(val):
     except (ValueError, TypeError):
         return 0
 
-import math
-
 # Helper pembulatan khusus (0.01 - 0.50 tetap/turun, 0.51 - 0.99 naik 1)
 def custom_round(val):
     try:
         val_float = float(val)
         integer_part = int(val_float)
         decimal_part = val_float - integer_part
-        
         if decimal_part > 0.50:
             return integer_part + 1
         else:
@@ -153,37 +133,34 @@ def custom_round(val):
     except (ValueError, TypeError):
         return 0
 
-# Fungsi Sinkronisasi Data ke Google Sheet (Mendukung Sheet Utama HPI & Cabang ICON)
+# Fungsi Sinkronisasi Data BPJS Ketenagakerjaan
 def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         client = gspread.authorize(creds)
         
-        # 1. Tentukan URL & Pemetaan Kolom berdasarkan pilihan Target Sheet
         if is_icon:
             sheet_url = st.secrets.get("SPREADSHEET_URL_ICON", st.secrets["SPREADSHEET_URL"])
-            col_npp_search = 8   # Kolom H (NPP ICON)
-            col_spk = 5          # Kolom E (SPK)
-            col_tk = 9           # Kolom I (Jumlah TK ICON)
-            col_jkk = 14         # Kolom N (JKK ICON)
-            col_jht = 15         # Kolom O (JHT ICON)
-            col_jkm = 16         # Kolom P (JKM ICON)
-            col_jpn = 17         # Kolom Q (JP ICON)
+            col_npp_search = 8   # Kolom H
+            col_spk = 5          # Kolom E
+            col_tk = 9           # Kolom I
+            col_jkk = 14         # Kolom N
+            col_jht = 15         # Kolom O
+            col_jkm = 16         # Kolom P
+            col_jpn = 17         # Kolom Q
         else:
             sheet_url = st.secrets["SPREADSHEET_URL"]
-            col_npp_search = 9   # Kolom I (NPP HPI Utama)
-            col_spk = 5          # Kolom E (SPK)
-            col_tk = 10          # Kolom J (Jumlah TK HPI Utama)
-            col_jkk = 15         # Kolom O (JKK HPI Utama)
-            col_jht = 16         # Kolom P (JHT HPI Utama)
-            col_jkm = 17         # Kolom Q (JKM HPI Utama)
-            col_jpn = 18         # Kolom R (JP HPI Utama)
+            col_npp_search = 9   # Kolom I
+            col_spk = 5          # Kolom E
+            col_tk = 10          # Kolom J
+            col_jkk = 15         # Kolom O
+            col_jht = 16         # Kolom P
+            col_jkm = 17         # Kolom Q
+            col_jpn = 18         # Kolom R
             
         sh = client.open_by_url(sheet_url)
         worksheet = sh.worksheet(nama_tab_sheet)
-        
-        # Ambil daftar NPP dari kolom pencarian yang sesuai
         npp_list = worksheet.col_values(col_npp_search)
         
         updated_count = 0
@@ -191,26 +168,91 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
         
         for row in records:
             npp_pdf = str(row["NPP"]).strip()
-            
-            # Cari posisi baris NPP yang cocok
             if npp_pdf in npp_list:
-                row_idx = npp_list.index(npp_pdf) + 1  # Baris Excel di Google Sheet
-                
-                # Update data secara dinamik sesuai sheet target
+                row_idx = npp_list.index(npp_pdf) + 1
                 worksheet.update_cell(row_idx, col_spk, str(row["Nomor Kontrak"]))
                 worksheet.update_cell(row_idx, col_tk, safe_int(row["Jumlah Tenaga Kerja"]))
                 worksheet.update_cell(row_idx, col_jkk, custom_round(row["Total Iuran JKK"]))
                 worksheet.update_cell(row_idx, col_jht, custom_round(row["Total Iuran JHT"]))
                 worksheet.update_cell(row_idx, col_jkm, custom_round(row["Total Iuran JKM"]))
                 worksheet.update_cell(row_idx, col_jpn, custom_round(row["Total Iuran JPN"]))
-                
                 updated_count += 1
                 
         return True, updated_count
     except Exception as e:
         return False, str(e)
 
-# Fungsi Ekstraksi Periode ("19 Oktober 2026" -> "Oktober 2026")
+# Fungsi Auto-Sync Khusus BPJS Kesehatan (Direct Index H, I, K)
+def sync_to_google_sheet_kesehatan(df_data, target_tab_name, is_icon=False):
+    """
+    Mengisi/meng-update data BPJS Kesehatan secara langsung
+    berdasarkan lokasi Kolom D (SPK), H (VA), I (TK), dan K (Total Iuran).
+    """
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        
+        sheet_url = st.secrets.get("SPREADSHEET_URL_ICON") if is_icon else st.secrets.get("SPREADSHEET_URL_KES", st.secrets["SPREADSHEET_URL"])
+        sh = client.open_by_url(sheet_url)
+        worksheet = sh.worksheet(target_tab_name)
+        
+        all_values = worksheet.get_all_values()
+        if not all_values:
+            return False, "Worksheet target kosong!"
+
+        # Didefinisikan posisi kolom secara presisi (0-based indexing Python):
+        spk_col_idx = 3      # Kolom D (Nomor SPK / Kontrak)
+        va_col_idx = 7       # Kolom H (Nomor VA Mandiri)
+        tk_col_idx = 8       # Kolom I (JUMLAH TK DI INVOICE)
+        iuran_col_idx = 10   # Kolom K (IURAN)
+        
+        start_row_idx = 4    # Baris data dimulai dari baris ke-5/6 (0-indexed = 4)
+
+        updated_count = 0
+        records = df_data.to_dict(orient="records")
+
+        for row in records:
+            val_spk = str(row.get("Nomor Kontrak", "")).strip()
+            val_va = str(row.get("Nomor VA", "")).strip()
+            val_iuran = float(row.get("Total Iuran", 0))
+            val_tk = int(row.get("Jumlah Tenaga Kerja", 0))
+
+            clean_pdf_va = re.sub(r'\D', '', val_va)
+            if not clean_pdf_va:
+                continue
+
+            matched_row_idx = -1
+
+            # Cari baris yang Nomor VA-nya cocok dari baris data ke bawah
+            for r_idx in range(start_row_idx, len(all_values)):
+                current_row = all_values[r_idx]
+                if len(current_row) > va_col_idx:
+                    sheet_va = str(current_row[va_col_idx]).strip()
+                    clean_sheet_va = re.sub(r'\D', '', sheet_va)
+                    
+                    if clean_pdf_va and clean_pdf_va in clean_sheet_va:
+                        matched_row_idx = r_idx + 1  # Baris gspread (1-based index)
+                        break
+
+            # Eksekusi Update ke Google Sheet jika VA cocok
+            if matched_row_idx != -1:
+                # 1. Update Kolom D (Nomor SPK) -> Index 4 (1-based)
+                if val_spk and val_spk != "-":
+                    worksheet.update_cell(matched_row_idx, spk_col_idx + 1, val_spk)
+                # 2. Update Kolom I (Jumlah TK) -> Index 9 (1-based)
+                worksheet.update_cell(matched_row_idx, tk_col_idx + 1, val_tk)
+                # 3. Update Kolom K (Iuran) -> Index 11 (1-based)
+                worksheet.update_cell(matched_row_idx, iuran_col_idx + 1, val_iuran)
+                
+                updated_count += 1
+
+        return True, f"{updated_count} baris data VA"
+
+    except Exception as e:
+        return False, str(e)
+
+# Helper Ekstraksi Periode
 def extract_periode(tanggal_str):
     if not tanggal_str:
         return "-"
@@ -221,7 +263,7 @@ def extract_periode(tanggal_str):
         return tanggal_str
     return tanggal_str
 
-# Fungsi Terbilang Rupiah
+# Helper Terbilang
 def terbilang(n):
     satuan = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"]
     n = int(abs(n))
@@ -245,7 +287,7 @@ def terbilang(n):
         return terbilang(n // 1000000000) + " Miliar " + terbilang(n % 1000000000)
     return str(n)
 
-# Fungsi Border Tabel Word
+# Helper Border Cell Word
 def set_cell_border(cell):
     tcPr = cell._tc.get_or_add_tcPr()
     tcBorders = parse_xml(r'''
@@ -258,20 +300,8 @@ def set_cell_border(cell):
     ''' % nsdecls('w'))
     tcPr.append(tcBorders)
 
-# Mapping Nama Cabang Ke Nama Kota Kedudukan Surat
-MAPPING_KOTA = {
-    "PALEMBANG": "Palembang",
-    "MEDAN": "Medan",
-    "SIBOLGA NIAS": "Sibolga",
-    "BABEL": "Pangkalpinang",
-    "BANGKA BELITUNG": "Pangkalpinang",
-    "JAWA TIMUR": "Surabaya",
-    "JAWA TENGAH": "Semarang",
-    "DKI JAKARTA": "Jakarta"
-}
-
 # ==============================================================================
-# DATABASE KONTRAK & SIDEBAR SURAT WORD
+# DATABASE KONTRAK & SIDEBAR
 # ==============================================================================
 @st.cache_data
 def load_database():
@@ -295,13 +325,9 @@ st.sidebar.header("📌 Pengaturan Dokumen Word")
 wilayah_list = list(db_kontrak.keys()) if db_kontrak else ["Cab. Palembang", "Cab. Medan", "Cab. Sibolga Nias", "Cab. Bangka Belitung"]
 selected_wilayah = st.sidebar.selectbox("Pilih Cabang / Wilayah", wilayah_list)
 
-# --- TAMBAHKAN BARIS INI KEMBALI AGAR ERROR HILANG ---
 wilayah_display = re.sub(r'(?i)\bcab\.?\s*', '', selected_wilayah).strip()
-
-# Ambil data lengkap cabang dari JSON (kota, manager, spk)
 data_cabang = db_kontrak.get(selected_wilayah, {})
 
-# Auto-extract Nama Kota, Manager, dan List Kontrak
 nama_kota = data_cabang.get("kota", wilayah_display.title())
 default_manager = data_cabang.get("manager", "NAMA MANAGER")
 kontrak_options = data_cabang.get("spk", ["-"])
@@ -312,25 +338,18 @@ if not kontrak_options:
 st.sidebar.markdown("---")
 st.sidebar.header("📝 Informasi Header Surat")
 nomor_surat = st.sidebar.text_input("Nomor Surat", "001/SP/HPI/X/2026")
-# Tanggal Surat Otomatis Terisi Hari Ini
 tanggal_surat = st.sidebar.text_input("Tanggal Surat", value=tanggal_hari_ini) 
-# Manager Otomatis dari JSON (Bisa Diedit Manual Jika Diperlukan)
 nama_manager = st.sidebar.text_input("Nama Manager Cabang", value=default_manager)
-
-# ------------------------------------------------------------------------------
-# KODE LOGO DITARUH DI SINI (Masih di dalam area sidebar)
-# ------------------------------------------------------------------------------
 
 if os.path.exists("logo.png"):
     st.sidebar.markdown("---")
     col1, col2, col3 = st.sidebar.columns([1, 3, 1])
     with col2:
         st.image("logo.png", use_container_width=True)
-    
-# ------------------------------------------------------------------------------
-# SETELAH ITU BARU MASUK KE TAB UTAMA
-# ------------------------------------------------------------------------------
 
+# ==============================================================================
+# TAB UTAMA
+# ==============================================================================
 tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS & NPP)", "🏥 BPJS Kesehatan (Billing Statement)"])
 
 # ==============================================================================
@@ -684,7 +703,7 @@ with tab1:
                     st.error("Template Word Ketenagakerjaan belum ditemukan di `templates/`!")
 
             # ==============================================================================
-            # AUTO-SYNC GOOGLE SHEETS KHUSUS BPJS TK (DENGAN DROPDOWN TAB OTOMATIS)
+            # AUTO-SYNC GOOGLE SHEETS KHUSUS BPJS TK
             # ==============================================================================
             st.markdown("---")
             st.subheader("🚀 Auto-Sync ke Google Sheets (BPJS TK)")
@@ -696,41 +715,36 @@ with tab1:
                 key="target_sheet_choice_tk"
             )
 
-            # Ambil daftar nama tab dari Google Sheet secara otomatis
             try:
                 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
                 creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
                 client = gspread.authorize(creds)
                 
-                # Tentukan URL berdasarkan radio button yang dipilih
                 sheet_url = st.secrets.get("SPREADSHEET_URL_ICON") if target_sheet_choice == "Sheet Rekap Cabang ICON" else st.secrets["SPREADSHEET_URL"]
                 sh = client.open_by_url(sheet_url)
                 
-                # Ambil seluruh nama tab/worksheet yang ada di Google Sheet
                 available_tabs = [ws.title for ws in sh.worksheets()]
                 
-                # Tampilkan Dropdown pilihan Tab
                 tab_sheet_target_tk = st.selectbox(
                     "Pilih Tab Google Sheet Target:", 
                     available_tabs,
                     key="target_sheet_tk"
                 )
             except Exception as e:
-                # Fallback text input jika misal koneksi internet terganggu saat load tab
                 st.warning(f"Tidak dapat memuat daftar tab secara otomatis: {e}")
                 tab_sheet_target_tk = st.text_input("Nama Tab Google Sheet Target (Manual)", "01. REKAP 11.26", key="target_sheet_tk")
 
             if st.button("⚡ Sync Data PDF ke Google Sheet Sekarang", type="primary", key="btn_sync_tk"):
-                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet..."):
+                with st.spinner("Sedang mencocokkan NPP dan mengirim data ke Google Sheet"):
                     is_icon_selected = (target_sheet_choice == "Sheet Rekap Cabang ICON")
                     success, res = sync_to_google_sheet(edited_df, tab_sheet_target_tk, is_icon=is_icon_selected)
                     if success:
-                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-update secara presisi di Google Sheet!")
+                        st.success(f"BERHASIL! {res} data baris NPP berhasil di-Update di Google Sheet!")
                     else:
                         st.error(f"Gagal melakukan sync: {res}")
 
 # ==============================================================================
-# TAB 2: BPJS KESEHATAN (INTERAKTIF & TABEL WORD 6 KOLOM)
+# TAB 2: BPJS KESEHATAN
 # ==============================================================================
 with tab2:
     st.subheader("Rekap PDF Billing Statement & Generator Surat BPJS Kesehatan")
@@ -772,11 +786,14 @@ with tab2:
                     nama_bu = re.sub(r'(?:Surat Tagihan|Billing Statement|Pelaporan Penagihan|JKN-KIS).*$', '', nama_bu, flags=re.IGNORECASE).strip()
                     data_kes["Nama Perusahaan"] = re.sub(r'\s+', ' ', nama_bu)
 
-                # 2. NOMOR VA
-                match_va = re.search(r'(?:BNI|BRI|MDR|BTN|Virtual Account)\s*:?\s*([0-9]{13,16})', clean_text, re.IGNORECASE)
-                if match_va:
-                    va_clean = match_va.group(1).strip()
-                    data_kes["Nomor VA"] = va_clean
+                # 2. NOMOR VA (DIUTAMAKAN MANDIRI / MDR)
+                match_va_mdr = re.search(r'(?:MDR|Mandiri)\s*:?\s*([0-9]{13,16})', clean_text, re.IGNORECASE)
+                if match_va_mdr:
+                    data_kes["Nomor VA"] = match_va_mdr.group(1).strip()
+                else:
+                    match_va_gen = re.search(r'(?:BNI|BRI|BTN|Virtual Account)\s*:?\s*([0-9]{13,16})', clean_text, re.IGNORECASE)
+                    if match_va_gen:
+                        data_kes["Nomor VA"] = match_va_gen.group(1).strip()
 
                 # 3. JUMLAH TENAGA KERJA
                 match_pegawai = re.search(r'(?:Rp\.?|Rp)?\s*[\d.]+\s*(?:Rp\.?|Rp)?\s*(\d+)\s+\d+\s+\d{2}/\d{2}/\d{4}', clean_text, re.IGNORECASE)
@@ -902,7 +919,7 @@ with tab2:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-            # 2. Export Word Docx BPJS Kesehatan (6 Kolom: NO, BU, NOMOR SPK, VA, JML TK, TOTAL)
+            # 2. Export Word Docx BPJS Kesehatan
             with col2:
                 st.markdown("##### 📝 Export Surat Word (.docx)")
                 template_kes_path = os.path.join("templates", "Template_DEFAULT_kesehatan.docx")
@@ -1033,3 +1050,49 @@ with tab2:
                     )
                 else:
                     st.error("Template Word belum ditemukan di `templates/`!")
+
+            # ==============================================================================
+            # AUTO-SYNC GOOGLE SHEETS KHUSUS BPJS KESEHATAN
+            # ==============================================================================
+            st.markdown("---")
+            st.subheader("🚀 Auto-Sync ke Google Sheets (BPJS Kesehatan)")
+
+            target_sheet_choice_ks = st.radio(
+                "Pilih Target Google Sheet:",
+                ["Sheet Rekap Utama HPI", "Sheet Khusus Cabang ICON"],
+                horizontal=True,
+                key="target_sheet_choice_ks"
+            )
+
+            # Ambil daftar nama tab secara otomatis dari Google Sheet (dengan penanganan error 503)
+            try:
+                scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+                creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+                client = gspread.authorize(creds)
+                
+                sheet_url_ks = st.secrets.get("SPREADSHEET_URL_ICON") if target_sheet_choice_ks == "Sheet Khusus Cabang ICON" else st.secrets.get("SPREADSHEET_URL_KES", st.secrets["SPREADSHEET_URL"])
+                sh_ks = client.open_by_url(sheet_url_ks)
+                
+                # Mengambil daftar tab
+                available_tabs_ks = [ws.title for ws in sh_ks.worksheets()]
+                
+                tab_sheet_target_ks = st.selectbox(
+                    "Pilih Tab Google Sheet Target:", 
+                    available_tabs_ks,
+                    key="target_sheet_ks"
+                )
+            except Exception as e:
+                # Menampilkan pemberitahuan ramah jika server Google 503
+                st.warning("⚠️ Server Google Sheet API sedang sibuk (Error 503). Silakan ketik nama tab secara manual di bawah ini:")
+                tab_sheet_target_ks = st.text_input("Nama Tab Google Sheet Target (Manual)", "1. NOV 26 SPSH SESUAI BILLI", key="target_sheet_ks")
+
+            if st.button("⚡ Sync Data PDF BPJS Kesehatan ke Google Sheet Sekarang", type="primary", key="btn_sync_ks"):
+                with st.spinner("Sedang mencocokkan Nomor VA dan mengirim data ke Google Sheet"):
+                    is_icon_selected_ks = (target_sheet_choice_ks == "Sheet Khusus Cabang ICON")
+                    
+                    success, res = sync_to_google_sheet_kesehatan(edited_df_kes, tab_sheet_target_ks, is_icon=is_icon_selected_ks)
+                    
+                    if success:
+                        st.success(f"BERHASIL! {res} berhasil di-Update ke Google Sheet!")
+                    else:
+                        st.error(f"Gagal melakukan sync: {res}")
