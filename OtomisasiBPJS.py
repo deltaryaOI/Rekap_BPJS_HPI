@@ -442,7 +442,7 @@ if os.path.exists("logo.png"):
 # ==============================================================================
 # TAB UTAMA
 # ==============================================================================
-tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS & NPP)", "🏥 BPJS Kesehatan (Billing Statement)"])
+tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS/NPP/F2A)", "🏥 BPJS Kesehatan (Billing Statement)"])
 
 # ==============================================================================
 # TAB 1: BPJS KETENAGAKERJAAN
@@ -450,7 +450,7 @@ tab1, tab2 = st.tabs(["🏢 BPJS Ketenagakerjaan (EPS & NPP)", "🏥 BPJS Keseha
 with tab1:
     st.subheader("Rekap PDF & Generator Surat BPJS Ketenagakerjaan")
     uploaded_files_tk = st.file_uploader(
-        "Upload File PDF BPJS TK (Bisa banyak file sekaligus)", 
+        "Silahkan upload NPP/EPS/F2A (Bisa banyak & campur format sekaligus)", 
         type=["pdf"], 
         accept_multiple_files=True,
         key="uploader_tk"
@@ -463,7 +463,7 @@ with tab1:
         def parse_amount(val_str):
             if not val_str:
                 return 0.0
-            clean_str = val_str.strip()
+            clean_str = str(val_str).strip()
             if '.' in clean_str and ',' in clean_str:
                 if clean_str.rfind(',') > clean_str.rfind('.'):
                     clean_str = clean_str.replace('.', '').replace(',', '.')
@@ -478,80 +478,176 @@ with tab1:
             except ValueError:
                 return 0.0
 
+        def lengkapi_npp_dan_kode_iuran(data_tk):
+            """Otomatis melengkapi Kode Iuran dari NPP (4+NPP+000) atau sebaliknya"""
+            npp = str(data_tk.get("NPP", "-")).strip()
+            kode = str(data_tk.get("Kode Iuran", "-")).strip()
+
+            if npp != "-" and npp.isdigit() and (kode == "-" or not kode):
+                data_tk["Kode Iuran"] = f"4{npp}000"
+            elif kode != "-" and kode.isdigit() and (npp == "-" or not npp):
+                if len(kode) > 4:
+                    data_tk["NPP"] = kode[1:-3]
+            return data_tk
+
+        def parse_f2a_pdf(pdf, default_spk):
+            """Membaca PDF Rincian Tenaga Kerja / Form F2A multi-halaman"""
+            data_tk = {
+                "Nama Perusahaan": "-",
+                "NPP": "-",
+                "Nomor Kontrak": str(default_spk),
+                "Kode Iuran": "-",
+                "Jumlah Tenaga Kerja": 0,
+                "Total Iuran JKK": 0.0,
+                "Total Iuran JHT": 0.0,
+                "Total Iuran JKM": 0.0,
+                "Total Iuran JPN": 0.0,
+                "Total Pembayaran": 0.0
+            }
+
+            max_no_tk = 0
+            first_page_text = pdf.pages[0].extract_text() or ""
+            lines = first_page_text.split('\n')
+            for idx, line in enumerate(lines):
+                if "NPP" in line and ("Nama Perusahaan" in line or "Nama Unit" in line):
+                    if idx + 1 < len(lines):
+                        val_line = lines[idx + 1].strip()
+                        parts = val_line.split()
+                        if parts and parts[0].isdigit():
+                            data_tk["NPP"] = str(parts[0])
+                            sisa_teks = " ".join(parts[1:]).strip()
+                        else:
+                            sisa_teks = val_line
+
+                        split_unit = re.split(r'(?=HALEYORA|ICON)', sisa_teks, flags=re.IGNORECASE)
+                        split_unit = [s.strip() for s in split_unit if s.strip() and not s.strip().isdigit()]
+                        if split_unit:
+                            data_tk["Nama Perusahaan"] = split_unit[-1]
+                        elif sisa_teks:
+                            data_tk["Nama Perusahaan"] = sisa_teks
+                    break
+
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if not row:
+                            continue
+                        
+                        first_col = str(row[0]).strip() if row[0] else ""
+                        if first_col.isdigit():
+                            no_urut = int(first_col)
+                            if no_urut > max_no_tk:
+                                max_no_tk = no_urut
+
+                        row_joined = " ".join([str(c) for c in row if c])
+                        if "Jumlah Seluruhnya" in row_joined:
+                            numeric_cells = []
+                            for c in row:
+                                if c and re.search(r'\d', str(c)) and "Jumlah" not in str(c):
+                                    numeric_cells.append(parse_amount(c))
+
+                            if len(numeric_cells) >= 8:
+                                jkk = numeric_cells[2]
+                                jkm = numeric_cells[3]
+                                jht = numeric_cells[4] + numeric_cells[5]
+                                jpn = numeric_cells[6] + numeric_cells[7]
+                                total = numeric_cells[-1] if len(numeric_cells) >= 11 else (jkk + jkm + jht + jpn)
+
+                                data_tk["Total Iuran JKK"] = jkk
+                                data_tk["Total Iuran JKM"] = jkm
+                                data_tk["Total Iuran JHT"] = jht
+                                data_tk["Total Iuran JPN"] = jpn
+                                data_tk["Total Pembayaran"] = total
+
+            data_tk["Jumlah Tenaga Kerja"] = max_no_tk
+            return lengkapi_npp_dan_kode_iuran(data_tk)
+
+        def parse_npp_eps_pdf(pdf, default_spk):
+            """Membaca PDF Billing NPP / EPS"""
+            raw_text = ""
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    raw_text += text + "\n"
+
+            clean_text = raw_text.replace('\n', ' ').replace('|', '')
+
+            data_tk = {
+                "Nama Perusahaan": "-",
+                "NPP": "-",
+                "Nomor Kontrak": str(default_spk),
+                "Kode Iuran": "-",
+                "Jumlah Tenaga Kerja": 0, 
+                "Total Iuran JKK": 0.0,
+                "Total Iuran JHT": 0.0,
+                "Total Iuran JKM": 0.0,
+                "Total Iuran JPN": 0.0,
+                "Total Pembayaran": 0.0
+            }
+
+            # 1. Nama Perusahaan
+            match_nama_sipp = re.search(r'Nama.?\s:\s*(.*?)\s(?:Total|Jumlah)\s*Tenaga', clean_text, re.IGNORECASE)
+            match_nama_eps = re.search(r'PEMBAYARAN\s*UNTUK\s+(.*?)\s+NPP', clean_text, re.IGNORECASE)
+            match_nama_eps_ringkas = re.search(r'Nama\s+Perusahaan\s*:\s*(.*?)(?:\s+Total\s+Tenaga|\s+Bulan|$)', clean_text, re.IGNORECASE)
+
+            if match_nama_sipp:
+                nama_pt = match_nama_sipp.group(1).replace('Perusahaan', '').replace('Kerja', '').strip()
+                data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', nama_pt)
+            elif match_nama_eps:
+                data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', match_nama_eps.group(1).strip())
+            elif match_nama_eps_ringkas:
+                data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', match_nama_eps_ringkas.group(1).strip())
+
+            # 2. NPP
+            match_npp = re.search(r'NPP\s*:\s*(\d+)', clean_text, re.IGNORECASE)
+            if match_npp:
+                data_tk["NPP"] = str(match_npp.group(1).strip())
+
+            # 3. Kode Iuran
+            match_kode = re.search(r'(?:KODE\s*IURAN\s*:?|KODE\s*PEMBAYARAN)\s*([0-9\s]{10,20})', clean_text, re.IGNORECASE)
+            if match_kode: 
+                data_tk["Kode Iuran"] = match_kode.group(1).replace(' ', '').strip()
+
+            # 4. Jumlah Tenaga Kerja
+            match_tk = re.search(r'(?:JUMLAH|Total)\s*TENAGA\s*KERJA\s*:\s*(\d+)', clean_text, re.IGNORECASE)
+            if match_tk:
+                data_tk["Jumlah Tenaga Kerja"] = int(match_tk.group(1).strip())
+
+            # 5. Rincian Iuran
+            match_jkk = re.search(r'JKK.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+            if match_jkk:
+                data_tk["Total Iuran JKK"] = parse_amount(match_jkk.group(1))
+
+            match_jht = re.search(r'JHT.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+            if match_jht:
+                data_tk["Total Iuran JHT"] = parse_amount(match_jht.group(1))
+
+            match_jkm = re.search(r'JKM.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+            if match_jkm:
+                data_tk["Total Iuran JKM"] = parse_amount(match_jkm.group(1))
+
+            match_jpn = re.search(r'(?:JPN|JP)\s.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+            if match_jpn:
+                data_tk["Total Iuran JPN"] = parse_amount(match_jpn.group(1))
+
+            # 6. Total Pembayaran
+            match_total = re.search(r'(?:TOTAL\s*YANG\s*DIBAYARKAN|TOTAL\s*IURAN)\s*(?:\(\s*PEMBULATAN\s*\))?\s*:?\s*(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
+            if match_total:
+                data_tk["Total Pembayaran"] = parse_amount(match_total.group(1))
+
+            return lengkapi_npp_dan_kode_iuran(data_tk)
+
+        default_spk = kontrak_options[0] if (kontrak_options and len(kontrak_options) > 0) else "-"
+
         for file in uploaded_files_tk:
             try:
                 with pdfplumber.open(file) as pdf:
-                    raw_text = ""
-                    for page in pdf.pages:
-                        text = page.extract_text()
-                        if text:
-                            raw_text += text + "\n"
-
-                clean_text = raw_text.replace('\n', ' ').replace('|', '')
-                default_spk = kontrak_options[0] if (kontrak_options and len(kontrak_options) > 0) else "-"
-
-                data_tk = {
-                    "Nama Perusahaan": "-",
-                    "NPP": "-",
-                    "Nomor Kontrak": str(default_spk),
-                    "Kode Iuran": "-",
-                    "Jumlah Tenaga Kerja": 0, 
-                    "Total Iuran JKK": 0.0,
-                    "Total Iuran JHT": 0.0,
-                    "Total Iuran JKM": 0.0,
-                    "Total Iuran JPN": 0.0,
-                    "Total Pembayaran": 0.0
-                }
-
-                # 1. Nama Perusahaan
-                match_nama_sipp = re.search(r'Nama.?\s:\s*(.*?)\s(?:Total|Jumlah)\s*Tenaga', clean_text, re.IGNORECASE)
-                match_nama_eps = re.search(r'PEMBAYARAN\s*UNTUK\s+(.*?)\s+NPP', clean_text, re.IGNORECASE)
-                match_nama_eps_ringkas = re.search(r'Nama\s+Perusahaan\s*:\s*(.*?)(?:\s+Total\s+Tenaga|\s+Bulan|$)', clean_text, re.IGNORECASE)
-
-                if match_nama_sipp:
-                    nama_pt = match_nama_sipp.group(1).replace('Perusahaan', '').replace('Kerja', '').strip()
-                    data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', nama_pt)
-                elif match_nama_eps:
-                    data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', match_nama_eps.group(1).strip())
-                elif match_nama_eps_ringkas:
-                    data_tk["Nama Perusahaan"] = re.sub(r'\s+', ' ', match_nama_eps_ringkas.group(1).strip())
-
-                # 2. NPP
-                match_npp = re.search(r'NPP\s*:\s*(\d+)', clean_text, re.IGNORECASE)
-                if match_npp:
-                    data_tk["NPP"] = str(match_npp.group(1).strip())
-
-                # 3. Kode Iuran
-                match_kode = re.search(r'(?:KODE\s*IURAN\s*:?|KODE\s*PEMBAYARAN)\s*([0-9\s]{10,20})', clean_text, re.IGNORECASE)
-                if match_kode: 
-                    data_tk["Kode Iuran"] = match_kode.group(1).replace(' ', '').strip()
-
-                # 4. Jumlah Tenaga Kerja
-                match_tk = re.search(r'(?:JUMLAH|Total)\s*TENAGA\s*KERJA\s*:\s*(\d+)', clean_text, re.IGNORECASE)
-                if match_tk:
-                    data_tk["Jumlah Tenaga Kerja"] = int(match_tk.group(1).strip())
-
-                # 5. Rincian Iuran
-                match_jkk = re.search(r'JKK.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-                if match_jkk:
-                    data_tk["Total Iuran JKK"] = parse_amount(match_jkk.group(1))
-
-                match_jht = re.search(r'JHT.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-                if match_jht:
-                    data_tk["Total Iuran JHT"] = parse_amount(match_jht.group(1))
-
-                match_jkm = re.search(r'JKM.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-                if match_jkm:
-                    data_tk["Total Iuran JKM"] = parse_amount(match_jkm.group(1))
-
-                match_jpn = re.search(r'(?:JPN|JP)\s.*?(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-                if match_jpn:
-                    data_tk["Total Iuran JPN"] = parse_amount(match_jpn.group(1))
-
-                # 6. Total Pembayaran
-                match_total = re.search(r'(?:TOTAL\s*YANG\s*DIBAYARKAN|TOTAL\s*IURAN)\s*(?:\(\s*PEMBULATAN\s*\))?\s*:?\s*(?:Rp\.?|Rp)?\s*([\d,.]+)', clean_text, re.IGNORECASE)
-                if match_total:
-                    data_tk["Total Pembayaran"] = parse_amount(match_total.group(1))
+                    first_text = (pdf.pages[0].extract_text() or "").lower()
+                    if "nomor referensi" in first_text or "iuran jht tk" in first_text or "jumlah seluruhnya" in first_text:
+                        data_tk = parse_f2a_pdf(pdf, default_spk)
+                    else:
+                        data_tk = parse_npp_eps_pdf(pdf, default_spk)
 
                 all_data_tk.append(data_tk)
                 
@@ -569,7 +665,7 @@ with tab1:
                     st.code(opt, language="text")
 
             column_config = {
-                "Nama Perusahaan": st.column_config.TextColumn("Nama Perusahaan"),
+                "Nama Perusahaan": st.column_config.TextColumn("Nama Perusahaan / Unit"),
                 "NPP": st.column_config.TextColumn("NPP"),
                 "Nomor Kontrak": st.column_config.TextColumn("Nomor Kontrak (SPK)", width="large"),
                 "Kode Iuran": st.column_config.TextColumn("Kode Iuran"),
