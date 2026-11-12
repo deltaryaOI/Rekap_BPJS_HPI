@@ -255,6 +255,15 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
         worksheet = sh.worksheet(nama_tab_sheet)
         npp_list = worksheet.col_values(col_npp_search)
         
+        # Konversi nomor kolom ke huruf kolom Excel/Sheets (misal 5 -> 'E', 15 -> 'O')
+        let_spk = get_column_letter(col_spk)
+        let_tk = get_column_letter(col_tk)
+        let_jkk = get_column_letter(col_jkk)
+        let_jht = get_column_letter(col_jht)
+        let_jkm = get_column_letter(col_jkm)
+        let_jpn = get_column_letter(col_jpn)
+
+        batch_data = []
         updated_count = 0
         records = df_edited.to_dict(orient="records")
         
@@ -262,88 +271,99 @@ def sync_to_google_sheet(df_edited, nama_tab_sheet, is_icon=False):
             npp_pdf = str(row["NPP"]).strip()
             if npp_pdf in npp_list:
                 row_idx = npp_list.index(npp_pdf) + 1
-                worksheet.update_cell(row_idx, col_spk, str(row["Nomor Kontrak"]))
-                worksheet.update_cell(row_idx, col_tk, safe_int(row["Jumlah Tenaga Kerja"]))
-                worksheet.update_cell(row_idx, col_jkk, custom_round(row["Total Iuran JKK"]))
-                worksheet.update_cell(row_idx, col_jht, custom_round(row["Total Iuran JHT"]))
-                worksheet.update_cell(row_idx, col_jkm, custom_round(row["Total Iuran JKM"]))
-                worksheet.update_cell(row_idx, col_jpn, custom_round(row["Total Iuran JPN"]))
+                
+                # Update Kolom SPK (1 cell)
+                batch_data.append({
+                    "range": f"{let_spk}{row_idx}",
+                    "values": [[str(row["Nomor Kontrak"])]]
+                })
+                # Update Kolom TK (1 cell)
+                batch_data.append({
+                    "range": f"{let_tk}{row_idx}",
+                    "values": [[safe_int(row["Jumlah Tenaga Kerja"])]]
+                })
+                # Update Kolom JKK, JHT, JKM, JPN berurutan dalam 1 range (misal O5:R5)
+                batch_data.append({
+                    "range": f"{let_jkk}{row_idx}:{let_jpn}{row_idx}",
+                    "values": [[
+                        custom_round(row["Total Iuran JKK"]),
+                        custom_round(row["Total Iuran JHT"]),
+                        custom_round(row["Total Iuran JKM"]),
+                        custom_round(row["Total Iuran JPN"])
+                    ]]
+                })
                 updated_count += 1
+                
+        # Kirim semua perubahan sekaligus dalam 1 API request!
+        if batch_data:
+            worksheet.batch_update(batch_data, value_input_option="USER_ENTERED")
                 
         return True, updated_count
     except Exception as e:
         return False, str(e)
 
 # Fungsi Auto-Sync Khusus BPJS Kesehatan (Direct Index H, I, K)
-def sync_to_google_sheet_kesehatan(df_data, target_tab_name, is_icon=False):
-    """
-    Mengisi/meng-update data BPJS Kesehatan secara langsung
-    berdasarkan lokasi Kolom D (SPK), H (VA), I (TK), dan K (Total Iuran).
-    """
+def sync_to_google_sheet_kes(df_edited, nama_tab_sheet, is_icon=False):
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         client = gspread.authorize(creds)
         
-        sheet_url = st.secrets.get("SPREADSHEET_URL_ICON") if is_icon else st.secrets.get("SPREADSHEET_URL_KES", st.secrets["SPREADSHEET_URL"])
+        # Sesuaikan URL & indeks kolom jika ICON memiliki sheet/kolom berbeda
+        if is_icon:
+            sheet_url = st.secrets.get("SPREADSHEET_URL_KES_ICON", st.secrets["SPREADSHEET_URL_KES"])
+            # Sesuaikan nomor kolom pencarian & target jika struktur sheet ICON berbeda
+            col_key_search = 8   # Misal Kolom H (Kode Badan Usaha / NPP)
+            col_spk = 5          # Kolom E
+            col_tk = 9           # Kolom I
+            col_iuran = 14       # Kolom N (Total Iuran Kes)
+        else:
+            sheet_url = st.secrets["SPREADSHEET_URL_KES"]
+            col_key_search = 9   # Misal Kolom I (Kode Badan Usaha / NPP)
+            col_spk = 5          # Kolom E
+            col_tk = 10          # Kolom J
+            col_iuran = 15       # Kolom O (Total Iuran Kes)
+
         sh = client.open_by_url(sheet_url)
-        worksheet = sh.worksheet(target_tab_name)
+        worksheet = sh.worksheet(nama_tab_sheet)
+        key_list = worksheet.col_values(col_key_search)
         
-        all_values = worksheet.get_all_values()
-        if not all_values:
-            return False, "Worksheet target kosong!"
+        let_spk = get_column_letter(col_spk)
+        let_tk = get_column_letter(col_tk)
+        let_iuran = get_column_letter(col_iuran)
 
-        # Didefinisikan posisi kolom secara presisi (0-based indexing Python):
-        spk_col_idx = 3      # Kolom D (Nomor SPK / Kontrak)
-        va_col_idx = 7       # Kolom H (Nomor VA Mandiri)
-        tk_col_idx = 8       # Kolom I (JUMLAH TK DI INVOICE)
-        iuran_col_idx = 10   # Kolom K (IURAN)
-        
-        start_row_idx = 4    # Baris data dimulai dari baris ke-5/6 (0-indexed = 4)
-
+        batch_data = []
         updated_count = 0
-        records = df_data.to_dict(orient="records")
-
+        records = df_edited.to_dict(orient="records")
+        
         for row in records:
-            val_spk = str(row.get("Nomor Kontrak", "")).strip()
-            val_va = str(row.get("Nomor VA", "")).strip()
-            val_iuran = float(row.get("Total Iuran", 0))
-            val_tk = int(row.get("Jumlah Tenaga Kerja", 0))
-
-            clean_pdf_va = re.sub(r'\D', '', val_va)
-            if not clean_pdf_va:
-                continue
-
-            matched_row_idx = -1
-
-            # Cari baris yang Nomor VA-nya cocok dari baris data ke bawah
-            for r_idx in range(start_row_idx, len(all_values)):
-                current_row = all_values[r_idx]
-                if len(current_row) > va_col_idx:
-                    sheet_va = str(current_row[va_col_idx]).strip()
-                    clean_sheet_va = re.sub(r'\D', '', sheet_va)
-                    
-                    if clean_pdf_va and clean_pdf_va in clean_sheet_va:
-                        matched_row_idx = r_idx + 1  # Baris gspread (1-based index)
-                        break
-
-            # Eksekusi Update ke Google Sheet jika VA cocok
-            if matched_row_idx != -1:
-                # 1. Update Kolom D (Nomor SPK) -> Index 4 (1-based)
-                if val_spk and val_spk != "-":
-                    worksheet.update_cell(matched_row_idx, spk_col_idx + 1, val_spk)
-                # 2. Update Kolom I (Jumlah TK) -> Index 9 (1-based)
-                worksheet.update_cell(matched_row_idx, tk_col_idx + 1, val_tk)
-                # 3. Update Kolom K (Iuran) -> Index 11 (1-based)
-                worksheet.update_cell(matched_row_idx, iuran_col_idx + 1, val_iuran)
+            # Ganti "Kode Badan Usaha" / "NPP" sesuai nama kolom key di df_edited Kesehatan
+            kode_pdf = str(row.get("Kode Badan Usaha", row.get("NPP", ""))).strip()
+            if kode_pdf in key_list:
+                row_idx = key_list.index(kode_pdf) + 1
                 
+                batch_data.append({
+                    "range": f"{let_spk}{row_idx}",
+                    "values": [[str(row["Nomor Kontrak"])]]
+                })
+                batch_data.append({
+                    "range": f"{let_tk}{row_idx}",
+                    "values": [[safe_int(row["Jumlah Tenaga Kerja"])]]
+                })
+                batch_data.append({
+                    "range": f"{let_iuran}{row_idx}",
+                    "values": [[custom_round(row["Total Pembayaran"])]]
+                })
                 updated_count += 1
-
-        return True, f"{updated_count} baris data VA"
-
+                
+        # Kirim semua update sekaligus dalam 1 request API!
+        if batch_data:
+            worksheet.batch_update(batch_data, value_input_option="USER_ENTERED")
+                
+        return True, updated_count
     except Exception as e:
         return False, str(e)
-
+        
 # Helper Ekstraksi Periode
 def extract_periode(tanggal_str):
     if not tanggal_str:
